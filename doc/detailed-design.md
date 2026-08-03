@@ -89,10 +89,11 @@ export function chordLeft(board, row, col)
 
 export function chordRight(board, row, col)
 // 前置：该格已翻开且 count>0；否则 no-op
-// unopenedNeighbors = 相邻中 state !== revealed 的格子数
-// 若 count === unopenedNeighbors 且 board.flagCount + count <= board.mines：
-//   将全部相邻未翻开格置为 flagged（旗），flagCount += count
-// -> { flagged: number[] } | { blocked: true, flagged: [] }
+// unopenedNeighbors = 相邻中 state !== revealed 的格子数（含 hidden/flagged/questioned）
+// toFlag = unopened 中 state !== flagged 的格子
+// 若 count === unopenedNeighbors 且 board.flagCount + toFlag.length <= board.mines：
+//   将 toFlag 全部置为 flagged（旗），flagCount += toFlag.length（不重复计数已标旗者）
+// -> { flagged: toFlag } | { blocked: true, flagged: [] }
 
 export function cycleMark(board, row, col)
 // hidden -> flagged（若 flagCount < mines；否则 blocked）-> questioned -> hidden

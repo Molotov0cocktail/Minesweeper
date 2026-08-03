@@ -264,16 +264,32 @@ describe('chordRight（右键 chord：数字==未翻开邻居数 → 全部标�
     expect(b.flagCount).toBe(1);
   });
   it('旗数超上限时 blocked，不标旗', () => {
+    // 5x5：mines=2，(2,2) 数字=2 且未翻开邻居恰为两雷 {8,18}，
+    // 已有一面非邻居旗 flagCount=1，再标 2 面将超限 → blocked
+    const b = boardWithMines(5, 5, [8, 18]);
+    reveal(b, 2, 2); // (2,2)=12 count=2
+    for (const i of [6, 7, 11, 13, 16, 17]) b.cells[i].state = CELL_REVEALED;
+    cycleMark(b, 0, 0); // 非邻居旗，flagCount=1
+    const r = chordRight(b, 2, 2); // 未翻开={8,18}==count；1+2>2
+    expect(r.blocked).toBe(true);
+    expect(r.flagged).toEqual([]);
+    expect(b.cells[8].state).toBe(CELL_HIDDEN);
+    expect(b.cells[18].state).toBe(CELL_HIDDEN);
+    expect(b.flagCount).toBe(1);
+  });
+
+  it('未翻开中已有旗时只新增未标旗者，flagCount 不重复计数', () => {
     const b = boardWithMines(3, 3, [0, 8]);
     reveal(b, 1, 1); // count=2
     for (const i of [1, 2, 3, 5, 6, 7]) b.cells[i].state = CELL_REVEALED;
-    cycleMark(b, 2, 2); // 旗 (2,2)，flagCount=1
-    // 未翻开邻居 = {0, 8}（0 隐藏、8 旗）→ 2 == count，但 flagCount+2=3 > mines=2
+    cycleMark(b, 2, 2); // 旗 idx8，flagCount=1
+    // 未翻开邻居 = {0(hidden), 8(flagged)} → 2 == count；cap: 1+1=2 <= mines 2 → 允许
     const r = chordRight(b, 1, 1);
-    expect(r.blocked).toBe(true);
-    expect(r.flagged).toEqual([]);
-    expect(b.cells[0].state).toBe(CELL_HIDDEN);
-    expect(b.flagCount).toBe(1);
+    expect(r.blocked).toBeUndefined();
+    expect(r.flagged).toEqual([0]);
+    expect(b.cells[0].state).toBe(CELL_FLAGGED);
+    expect(b.cells[8].state).toBe(CELL_FLAGGED);
+    expect(b.flagCount).toBe(2); // 原有 1 + 新增 1
   });
 });
 
