@@ -36,4 +36,7 @@ Wave A: T1, T4, T6（并行）；Wave B: T2, T3；Wave C: T5；Wave D: 集成/�
 - 2026-08-03 T3 core/game.js 状态机+计时+防猜测调度完成（16/16 绿）。
 - 2026-08-03 T5 renderer 渲染/UI/装配完成，全量 `npm test` 111/111 绿。
 - 2026-08-03 README 已编写提交。
-- 2026-08-03 待集成：electron 冒烟 + `npm run dist` 打包 + 最终推送。
+- 2026-08-03 electron 冒烟：页面加载成功、无渲染崩溃、无 JS 错误、画布与 UI 正常（CSP 警告已修复）。
+- 2026-08-03 `npm run dist` 打包成功：`dist/Minesweeper Setup 1.0.0.exe`（NSIS，78MB）+ `dist/win-unpacked/Minesweeper.exe`。
+- 2026-08-03 打包备注：需 ELECTRON_MIRROR / ELECTRON_BUILDER_BINARIES_MIRROR 镜像；signAndEditExecutable=false 避开 winCodeSign 符号链接权限问题。
+- 2026-08-03 全部任务完成，待最终推送。

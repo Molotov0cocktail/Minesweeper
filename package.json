@@ -22,6 +22,9 @@
     "productName": "Minesweeper",
     "files": ["electron/**", "src/**", "index.html", "styles/**", "package.json"],
     "directories": { "output": "dist" },
-    "win": { "target": "nsis" }
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    }
   }
 }

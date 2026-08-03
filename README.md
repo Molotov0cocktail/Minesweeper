@@ -47,6 +47,16 @@ npm run test:watch # 监听模式
 npm run dist       # electron-builder 生成 Windows 安装包（NSIS）到 dist/
 ```
 
+> 中国大陆网络下需走镜像（Electron 与 NSIS 二进制均从 GitHub 下载，直连易超时）：
+> ```bash
+> export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+> export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
+> npm run dist
+> ```
+> 本机未配置代码签名，构建已配置 `win.signAndEditExecutable: false`（跳过签名与资源编辑，
+> 可避免 Windows 无符号链接权限导致的 winCodeSign 解压失败），产物为未签名安装包。
+> 产出：`dist/Minesweeper Setup <版本>.exe`（NSIS 安装包）与 `dist/win-unpacked/Minesweeper.exe`（免安装）。
+
 ## 操作说明
 
 | 操作 | 效果 |
