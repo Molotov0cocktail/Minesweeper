@@ -57,14 +57,18 @@ export function neighborsOf(board, row, col) // -> Cell[]（越界自动过滤�
 
 ### 布雷（首次点击后调用）
 ```js
-export function randomMineSet(rows, cols, mines, safeIdx)
-// 候选池 = 所有格子排除 safeIdx 及其 8 邻居；从中等概率抽取 mines 个（Fisher–Yates）
+export function randomMineSet(rows, cols, mines, safeIdx, rng = Math.random)
+// 候选池 = 所有格子排除 safeIdx 及其 8 邻居；从中抽取 mines 个（Fisher–Yates，
+// 交换时 j = floor(rng() * (i+1))，rng 可注入以支持测试确定性）
 // 候选池不足 mines 时抛 Error('Mine pool too small')（校验已保证不会发生）
 // -> Set<number>
 
+export function setMines(board, mineSet)
+// 直接用给定 mineSet 布雷（跳过随机）：写 cell.isMine、计算每格 count、minesPlaced=true
+// 供防猜测重排结果落地使用；返回 board
+
 export function placeMines(board, safeIdx)
-// 用 randomMineSet 布雷：写 cell.isMine；随后计算每格 count = 相邻雷数；
-// board.minesPlaced = true；返回 board
+// = setMines(board, randomMineSet(rows, cols, mines, safeIdx))；返回 board
 ```
 
 ### 翻开与标记
@@ -195,10 +199,13 @@ getRemainingMines() -> number   // max(0, mines - flagCount)
 1. **首次 reveal**（state===READY）：
    - 确定 `safeIdx`
    - 若 `antiGuess`：`generateAntiGuess(rows, cols, mines, safeIdx)`
-     - `ok` → `antiGuessActive=true`，用返回 mineSet 布雷
-     - `!ok` → `antiGuessActive=false`，`warning=中文原因`，`emit('warning', warning)`，用返回 mineSet 布雷（density 情形用 `randomMineSet`）
-   - 否则：`placeMines(board, safeIdx)`（普通随机）
+     - `ok` → `antiGuessActive=true`，`warning=null`，用返回 mineSet 布雷（`setMines`）
+     - `reason==='density'` → `antiGuessActive=false`，`warning='防猜测已关闭：雷密度过高，无法保证无猜'`（精确字符串），`emit('warning', warning)`，用 `placeMines` 普通布雷
+     - `reason==='retries'` → `antiGuessActive=false`，`warning='防猜测已关闭：重排 20 次仍无法保证无猜'`（精确字符串），`emit('warning', warning)`，用返回 mineSet 布雷（`setMines`）
+   - 否则（防猜测关）：`setMines(board, randomMineSet(rows, cols, mines, safeIdx))`（普通随机），`antiGuessActive=false`，`warning=null`
    - `state=PLAYING`，计时起点 `now()`
+   - 说明：game 不调用 `board.placeMines`，而是自行组合 `randomMineSet` + `setMines`，
+     以便测试通过 mock `board.randomMineSet` 实现确定性布局
 2. **胜利/失败**：任何操作后若 `isWin(board)` → `state=WON`、冻结计时、`emit('win', { timeMs, mode, antiGuessActive, rows, cols, mines })`；
    若 explode → `state=LOST`、`revealAllMines(board)`、冻结计时、`emit('lose', { timeMs, mode, antiGuessActive })`
 3. **计时**（正向累加）：
@@ -206,6 +213,9 @@ getRemainingMines() -> number   // max(0, mines - flagCount)
    - `pause()`：累加当前差值，state=PAUSED
    - `resume()`：重设基点，state=PLAYING
    - 胜利/失败时把最终 elapsed 固化为 `finalTimeMs`
+4. **操作守卫**：非 PLAYING 状态下的操作行为——
+   - `READY`：`reveal` = 首次点击（触发布雷）；`cycleMark` 允许；`chordLeft/chordRight` → `{type:'noop'}`
+   - `PAUSED` / `WON` / `LOST`：`reveal / chordLeft / chordRight / cycleMark` 一律 → `{type:'noop'}`
 
 ### 边界条件清单（须有测试覆盖）
 - 首次点击必安全：READY 下 reveal 任何格子不爆炸，且 0 区扩散
@@ -256,20 +266,26 @@ export const LEADERBOARD_MODES = ['beginner', 'intermediate', 'expert'];
 ## 6. renderer（src/renderer/）
 
 ### index.html 关键 DOM 契约（T5/T6 实现）
-| id | 用途 |
+`createUI(host, deps)` 在 host 内**程序化生成**全部控件 DOM（index.html 仅提供
+`<div id="app">` 与 `<canvas id="board-canvas">`），id 如下（jsdom 测试按此查询）：
+
+| id / 选择器 | 用途 |
 |---|---|
-| `mode-buttons` | 三个标准模式按钮（data-mode） |
-| `custom-rows` / `custom-cols` / `custom-mines` | 自定义输入框 |
-| `custom-apply` | 自定义应用按钮 |
-| `anti-guess-toggle` | 防猜测开关（checkbox） |
-| `pause-btn` / `restart-btn` | 暂停 / 重开 |
-| `mine-count` | 剩余雷数 |
-| `timer` | 计时显示（mm:ss） |
-| `board-canvas` / `board-wrap` | 棋盘画布与容器 |
-| `scale-handle` | 缩放手柄（右下角） |
-| `pause-overlay` | 暂停遮罩（含"继续"按钮） |
-| `warning-banner` | 防猜测关闭横幅（含关闭按钮） |
-| `nickname-modal` / `leaderboard-modal` | 昵称输入 / 排行榜弹窗 |
+| `#mine-count` | 剩余雷数 |
+| `#timer` | 计时显示（mm:ss） |
+| `.ms-mode[data-mode]` | 三个标准模式按钮（data-mode=beginner/intermediate/expert） |
+| `#custom-rows` / `#custom-cols` / `#custom-mines` | 自定义输入框 |
+| `#custom-apply` / `#custom-error` | 自定义应用按钮 / 错误提示 |
+| `#anti-guess-toggle` | 防猜测开关（checkbox，默认勾选） |
+| `#antiguess-status` | 防猜测实际生效状态文案（开/关） |
+| `#pause-btn` | 暂停按钮 |
+| `#resume-btn` | 继续按钮（遮罩内） |
+| `#restart-btn` | 重新开始 |
+| `#warning-banner` + `#warning-banner-text` + `#warning-banner-close` | 防猜测关闭横幅 |
+| `#pause-overlay` | 暂停遮罩 |
+| `#nickname-modal` + `#nickname-input` + `#nickname-submit` + `#nickname-cancel` | 昵称弹窗 |
+| `#leaderboard-modal` + `#leaderboard-tabs` + `#leaderboard-body` + `#leaderboard-close` | 排行榜弹窗 |
+| `#board-canvas` / `#board-wrap` / `#scale-handle` | 画布 / 容器 / 缩放手柄（main.js） |
 
 ### renderer/ui.js —— 可测 DOM 层
 ```js
@@ -343,10 +359,11 @@ export function drawCell(ctx, x, y, size, cell, gameState)
 | modes.test.js | validateCustom 全分支、MODES 常量 | ~12 |
 | board.test.js | 创建/邻居/布雷安全区/翻开洪泛/chord×2/标记循环/胜负 | ~30 |
 | solve.test.js | 可解/需猜布局、密度短路、重排、rng 确定性 | ~15 |
-| game.test.js | 状态机、首点、防猜测三分支、计时/暂停、胜负事件 | ~25 |
+| solve.retries.test.js | 重排 20 次耗尽（vi.mock 固定不可解布局） | ~2 |
+| game.test.js | 状态机、首点、防猜测三分支、计时/暂停、胜负事件（vi.mock solve 保证确定性） | ~25 |
 | leaderboard.test.js | 存取/排序/截断/损坏修复/降级 | ~15 |
 | ui.test.js（jsdom） | 控件回调、横幅、弹窗、计时刷新 | ~12 |
-| render.test.js（jsdom） | 假 ctx 绘制断言 | ~6 |
+| render.test.js | 假 ctx 绘制断言 | ~6 |
 
 验收标准：`npm test` 全绿；随后 `npm start` 手动冒烟；最后 `npm run dist` 出包。
 
