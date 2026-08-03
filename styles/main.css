@@ -1,0 +1,217 @@
+/* ============================================================
+   Minesweeper 经典 Windows 扫雷风样式
+   - 灰色页面底 (#c0c0c0)、深灰边框
+   - 3D 浮雕（.bevel-raised / .bevel-sunken）
+   - 数字经典配色（.num-1 ~ .num-8）
+   - 遮罩 / 弹窗 / 横幅 / 按钮 / hidden
+   ============================================================ */
+
+/* ---------- 基础 ---------- */
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --face: #c0c0c0;            /* 经典灰 */
+  --face-dark: #808080;       /* 深灰边框 */
+  --face-light: #ffffff;      /* 高光 */
+  --face-black: #000000;      /* 最暗阴影 */
+  --window-border: #404040;   /* 窗口外框 */
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--face);
+  color: #000;
+  font-family: "Segoe UI", "Microsoft YaHei", Tahoma, Arial, sans-serif;
+  font-size: 14px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ---------- 应用布局 ---------- */
+#app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 100%;
+  padding: 16px;
+}
+
+.app-title {
+  text-align: center;
+}
+
+.app-title h1 {
+  margin: 0;
+  font-size: 20px;
+  color: #404040;
+  letter-spacing: 1px;
+}
+
+/* ---------- 棋盘容器 ---------- */
+#board-wrap {
+  position: relative;
+  display: inline-block;
+  padding: 6px;
+}
+
+#board-canvas {
+  display: block;
+  image-rendering: pixelated;
+  background: var(--face);
+  border: 2px solid var(--window-border);
+}
+
+#scale-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  cursor: se-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 0 45%,
+    var(--face-dark) 45% 55%,
+    transparent 55% 70%,
+    var(--face-dark) 70% 80%,
+    transparent 80%
+  );
+}
+
+/* ---------- 3D 浮雕（经典凸起 / 凹下） ---------- */
+.bevel-raised {
+  background: var(--face);
+  border: 1px solid var(--window-border);
+  box-shadow:
+    inset -1px -1px 0 var(--face-dark),
+    inset -2px -2px 0 var(--face-black),
+    inset 1px 1px 0 var(--face-light);
+}
+
+.bevel-sunken {
+  background: var(--face);
+  border: 1px solid var(--window-border);
+  box-shadow:
+    inset -1px -1px 0 var(--face-light),
+    inset 1px 1px 0 var(--face-dark),
+    inset 2px 2px 0 var(--face-black);
+}
+
+/* 供可点击控件使用的"按下"态 */
+.bevel-raised:active {
+  box-shadow:
+    inset -1px -1px 0 var(--face-light),
+    inset 1px 1px 0 var(--face-dark),
+    inset 2px 2px 0 var(--face-black);
+}
+
+/* ---------- 数字经典配色 ---------- */
+.num-1 { color: #0000ff; } /* 蓝 */
+.num-2 { color: #008000; } /* 绿 */
+.num-3 { color: #ff0000; } /* 红 */
+.num-4 { color: #000080; } /* 深蓝 */
+.num-5 { color: #800000; } /* 深红 */
+.num-6 { color: #008080; } /* 青 */
+.num-7 { color: #000000; } /* 黑 */
+.num-8 { color: #808080; } /* 灰 */
+
+/* ---------- 按钮 ---------- */
+button {
+  font-family: inherit;
+  font-size: 14px;
+  padding: 4px 14px;
+  cursor: pointer;
+  border: 1px solid var(--window-border);
+  box-shadow:
+    inset -1px -1px 0 var(--face-dark),
+    inset -2px -2px 0 var(--face-black),
+    inset 1px 1px 0 var(--face-light);
+  background: var(--face);
+  color: #000;
+}
+
+button:active {
+  box-shadow:
+    inset -1px -1px 0 var(--face-light),
+    inset 1px 1px 0 var(--face-dark),
+    inset 2px 2px 0 var(--face-black);
+}
+
+button:disabled {
+  color: var(--face-dark);
+  cursor: not-allowed;
+}
+
+/* ---------- 遮罩 ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+}
+
+/* ---------- 弹窗 ---------- */
+.modal {
+  min-width: 260px;
+  max-width: 80vw;
+  max-height: 80vh;
+  overflow: auto;
+  padding: 16px;
+  background: var(--face);
+  border: 2px solid var(--window-border);
+  box-shadow:
+    inset -2px -2px 0 var(--face-dark),
+    inset -4px -4px 0 var(--face-black),
+    inset 2px 2px 0 var(--face-light);
+}
+
+.modal-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  text-align: center;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+/* ---------- 横幅 ---------- */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #ffffcc;
+  border: 2px solid #808000;
+  color: #000;
+  max-width: 90vw;
+}
+
+.banner-close {
+  cursor: pointer;
+  font-weight: bold;
+  border: 1px solid var(--window-border);
+  padding: 0 6px;
+  background: var(--face);
+}
+
+/* ---------- 工具类 ---------- */
+.hidden {
+  display: none;
+}

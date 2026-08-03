@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>扫雷 Minesweeper</title>
+  <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+  <!-- 应用根容器：控件 DOM 由 src/renderer/ui.js 程序化生成（详见 detailed-design 第 6 节）。
+       DOM 契约 id：#app、#board-wrap、#board-canvas、#scale-handle -->
+  <div id="app">
+    <header class="app-title">
+      <h1>扫雷 Minesweeper</h1>
+    </header>
+
+    <!-- 棋盘容器：canvas 与缩放手柄 -->
+    <div id="board-wrap">
+      <canvas id="board-canvas" width="0" height="0"></canvas>
+      <div id="scale-handle" class="scale-handle" title="拖动缩放棋盘"></div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/renderer/main.js"></script>
+</body>
+</html>
