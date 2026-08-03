@@ -7,6 +7,9 @@ out/
 release/
 *.exe
 
+# Smoke-test artifacts
+smoke-screenshot.png
+
 # Logs
 *.log
 npm-debug.log*
