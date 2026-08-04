@@ -215,6 +215,7 @@ export function planUninstall({ manifest, tree }) {
   // 清单外文件（清单内但所在目录被跳过的文件不单独报告，随目录保留）
   for (const f of diskFiles) {
     const rel = diskFileRels.get(f);
+    if (rel === MANIFEST_FILE) continue; // 清单自身由下方统一处理，不算清单外
     if (!mFileSet.has(rel)) skippedExtraneous.push({ rel, abs: f });
   }
 
@@ -227,6 +228,11 @@ export function planUninstall({ manifest, tree }) {
     if (parent === base || deletableDirs.has(parent)) {
       toDelete.push({ type: 'file', rel, abs });
     }
+  }
+  // 清单文件本身也纳入删除（清单不列出自身；否则残留使根目录永远非空、无法卸载干净）
+  const manifestAbs = path.join(base, MANIFEST_FILE);
+  if (diskFileSet.has(manifestAbs)) {
+    toDelete.push({ type: 'file', rel: MANIFEST_FILE, abs: manifestAbs });
   }
   // 目录：自底向上（深→浅）
   const deletableList = [...deletableDirs].sort((a, b) => depthOf(b) - depthOf(a));
@@ -314,15 +320,27 @@ export function detectLegacy({ localAppData, registryExists, existsSync, shortcu
 }
 
 /**
- * 生成卸载清理 .bat 脚本：文件先、目录自底向上、最后自删；路径一律双引号包裹。
+ * 生成卸载清理 .bat 脚本：文件先、目录自底向上、带重试循环（应用退出后文件解锁才能删净）、
+ * 最后自删；路径一律双引号包裹。
+ * 结构：@echo off → 初始等待 → tries 计数 → :retry → 全部 del/rmdir → 若仍有残留 goto retry
+ * （60 次上限约 5 分钟，防死循环）→ :done → del "%~f0"
  */
 export function buildUninstallCleanupScript({ files, dirs }) {
-  const lines = ['@echo off'];
-  for (const f of files || []) lines.push(`del /f /q "${f}"`);
   const depthOf = (p) => p.split(path.sep).length;
   const sortedDirs = [...(dirs || [])].sort((a, b) => depthOf(b) - depthOf(a));
+  const lines = [
+    '@echo off',
+    'ping 127.0.0.1 -n 2 > nul', // 初始等待：给应用退出留窗口
+    'set tries=0',
+    ':retry',
+    'set /a tries+=1',
+    'if %tries% gtr 60 goto done',
+  ];
+  for (const f of files || []) lines.push(`del /f /q "${f}"`);
   for (const d of sortedDirs) lines.push(`rmdir "${d}"`);
-  lines.push('del "%~f0"');
+  for (const f of files || []) lines.push(`if exist "${f}" goto retry`);
+  for (const d of sortedDirs) lines.push(`if exist "${d}" goto retry`);
+  lines.push(':done', 'del "%~f0"');
   return lines.join('\n');
 }
 

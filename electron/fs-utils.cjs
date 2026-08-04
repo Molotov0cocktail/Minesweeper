@@ -1,7 +1,8 @@
 // electron/fs-utils.cjs —— 纯 fs 枚举/删除工具（无业务决策，供 installer-runner 使用）。
 // 枚举源树：相对路径数组；扫描目标树：{ files, dirs } 绝对路径；递归删除：旧版残留清理。
+// 必须用 original-fs：Electron 补丁 fs 会把「路径以 .asar 结尾的文件」误当 asar 容器（见 runner 注释）。
 
-const fs = require('fs');
+const fs = require('original-fs');
 const path = require('path');
 
 // 源树顶层允许安装的条目：镜像 package.json build.files（electron/**、src/**、index.html、styles/**、package.json）。

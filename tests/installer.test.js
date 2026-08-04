@@ -267,6 +267,20 @@ describe('planUninstall：清单式删除 + 保留外来文件', () => {
     expect(r.skippedExtraneous.map((e) => e.rel)).toContain('sub');
     expect(r.skippedExtraneous.map((e) => e.rel)).toContain('sub\\user.txt');
   });
+
+  it('清单文件本身纳入删除（在文件组末尾、目录之前），且不报为清单外', () => {
+    const r = planUninstall({
+      manifest,
+      tree: {
+        files: ['C:\\App\\f1.exe', 'C:\\App\\sub\\f2.dll', 'C:\\App\\install-manifest.json'],
+        dirs: ['C:\\App\\sub', 'C:\\App'],
+      },
+    });
+    const toDelete = r.toDelete;
+    expect(toDelete.map((t) => t.rel)).toEqual(['f1.exe', 'sub\\f2.dll', 'install-manifest.json', 'sub', '.']);
+    expect(toDelete[2].type).toBe('file');
+    expect(r.skippedExtraneous).toEqual([]); // 清单自身不报为清单外
+  });
 });
 
 describe('relocateManifestDir：移动目录后重定位', () => {
@@ -342,15 +356,25 @@ describe('detectLegacy：旧版残留检测', () => {
 });
 
 describe('buildUninstallCleanupScript', () => {
-  it('文件先、目录自底向上、最后自删 %~f0、路径引号包裹', () => {
+  it('文件先、目录自底向上、重试循环、最后自删 %~f0、路径引号包裹', () => {
     const script = buildUninstallCleanupScript({ files: ['C:\\App\\f1.exe', 'C:\\App\\sub\\f2.dll'], dirs: ['C:\\App\\sub', 'C:\\App'] });
     const lines = script.split('\n');
     expect(lines[0]).toBe('@echo off');
-    expect(lines[1]).toBe('del /f /q "C:\\App\\f1.exe"');
-    expect(lines[2]).toBe('del /f /q "C:\\App\\sub\\f2.dll"');
-    expect(lines[3]).toBe('rmdir "C:\\App\\sub"'); // 深目录先
-    expect(lines[4]).toBe('rmdir "C:\\App"');
-    expect(lines[5]).toBe('del "%~f0"');
+    expect(lines[1]).toBe('ping 127.0.0.1 -n 2 > nul'); // 初始等待
+    expect(lines).toContain(':retry');
+    expect(lines).toContain('if %tries% gtr 60 goto done'); // 重试上限防死循环
+    expect(lines).toContain('del /f /q "C:\\App\\f1.exe"');
+    expect(lines).toContain('del /f /q "C:\\App\\sub\\f2.dll"');
+    expect(lines).toContain('rmdir "C:\\App\\sub"');
+    expect(lines).toContain('rmdir "C:\\App"');
+    expect(lines).toContain('if exist "C:\\App\\f1.exe" goto retry');
+    expect(lines).toContain('if exist "C:\\App\\sub" goto retry');
+    expect(lines[lines.length - 1]).toBe('del "%~f0"');
+    // 顺序：文件在目录前、深目录先
+    const idx = (s) => lines.indexOf(s);
+    expect(idx('del /f /q "C:\\App\\f1.exe"')).toBeLessThan(idx('del /f /q "C:\\App\\sub\\f2.dll"'));
+    expect(idx('del /f /q "C:\\App\\sub\\f2.dll"')).toBeLessThan(idx('rmdir "C:\\App\\sub"'));
+    expect(idx('rmdir "C:\\App\\sub"')).toBeLessThan(idx('rmdir "C:\\App"'));
   });
 });
 

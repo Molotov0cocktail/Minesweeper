@@ -23,7 +23,7 @@
     "files": ["electron/**", "src/**", "index.html", "styles/**", "package.json"],
     "directories": { "output": "dist" },
     "win": {
-      "target": "nsis",
+      "target": ["dir", "zip"],
       "signAndEditExecutable": false
     }
   }

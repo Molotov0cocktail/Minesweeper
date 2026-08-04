@@ -3,7 +3,10 @@
 // fs / reg.exe / PowerShell 快捷方式等副作用，转发进度事件（installer:progress）并逐条写日志。
 // 路径全部运行时解析（process.execPath / app.getAppPath()），进程内不缓存安装目录绝对路径。
 
-const fs = require('fs');
+// 注意：必须用 original-fs（Electron 未打 asar 补丁的原生 fs）。
+// Electron 的补丁 fs 会把「路径以 .asar 结尾的源文件」误当作 asar 容器去内部查找，
+// 导致复制 resources\app.asar 报 ENOENT "not found in <asar>"。
+const fs = require('original-fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync, spawn } = require('child_process');

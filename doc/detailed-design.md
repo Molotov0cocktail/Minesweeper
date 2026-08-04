@@ -502,12 +502,14 @@ planInstall({sourceDir, targetDir, files, excludes}) -> { steps, dirs }
 planUninstall({manifest, tree}) -> { toDelete, skippedExtraneous, skippedMissing }
 // tree: { files: string[], dirs: string[] } 磁盘实际扫描（调用方枚举，绝对路径，含安装根目录）
 // base = manifest.baseDir
-// toDelete: [{ type:'file'|'dir', rel, abs }]，顺序 = 文件全部在前（清单序）、
+// toDelete: [{ type:'file'|'dir', rel, abs }]，顺序 = 文件全部在前（清单序，末尾追加清单文件自身）、
 //           目录按"自底向上"（深→浅），安装根目录（rel='.'）排最后
 // skippedExtraneous: [{ rel, abs }]  清单外文件；清单外目录；
 //          清单内但含清单外内容的目录（该目录不删，防误删）→ 均跳过并提示
 // skippedMissing: string[]          清单内但磁盘不存在的 rel → 跳过（非错误）
-// 语义：清单外内容绝不删除；清单内缺失不算错误
+// 语义：清单外内容绝不删除；清单内缺失不算错误；
+//       安装清单自身（install-manifest.json）在磁盘存在时纳入删除（清单不列出自身，
+//       否则残留使根目录永远非空无法删净），且不报为清单外
 
 relocateManifestDir({execPathDir, registryUninstallString, existsSync}) -> string|null
 // 优先级：execPathDir 下存在清单（existsSync 注入）→ execPathDir；
@@ -530,8 +532,11 @@ detectLegacy({localAppData, registryExists, existsSync, shortcutCandidates}) -> 
 }
 
 buildUninstallCleanupScript({files, dirs}) -> string
-// 生成 .bat 内容：`@echo off` → 每文件 `del /f /q "<abs>"` → 每目录 `rmdir "<abs>"`（自底向上）→
-// 最后 `del "%~f0"`（自删）；路径一律双引号包裹
+// 生成 .bat 内容（带重试循环，应用退出后文件解锁才能删净）：
+// `@echo off` → `ping 127.0.0.1 -n 2 > nul`（初始等待）→ `set tries=0` → `:retry` →
+// `set /a tries+=1` → `if %tries% gtr 60 goto done`（上限约 5 分钟防死循环）→
+// 每文件 `del /f /q "<abs>"` → 每目录 `rmdir "<abs>"`（自底向上）→
+// 每条目 `if exist "<abs>" goto retry` → `:done` → `del "%~f0"`（自删）；路径一律双引号包裹
 
 executeSteps(steps, fsOps, onStep) -> Promise<{ ok, errors:[{code,message,path}], done, skipped }>
 // steps: planInstall 的 copy steps 或 planUninstall 的 toDelete

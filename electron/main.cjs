@@ -32,13 +32,28 @@ function triggerSilentUninstall() {
   (async () => {
     if (!runner) {
       logger.error('main', '卸载执行器未就绪，静默卸载终止');
-      return;
+      return null;
     }
-    const report = await runner.uninstall();
+    return runner.uninstall();
+  })().then((report) => {
     logger.info('main', `静默卸载结果：${JSON.stringify(report)}`);
-  })().then(() => app.quit()).catch((err) => {
+    // 清理残留子进程：主进程退出后 GPU/utility 等子进程仍可能锁住安装目录，
+    // 导致延迟清理 bat 在重试窗口内无法删除（Chromium 孤儿子进程约 100s 才自退）
+    try {
+      for (const m of app.getAppMetrics()) {
+        if (m.pid && m.pid !== process.pid) {
+          try {
+            process.kill(m.pid);
+          } catch { /* 子进程已退出 */ }
+        }
+      }
+    } catch (err) {
+      logger.warn('main', `清理子进程失败：${(err && err.stack) || String(err)}`);
+    }
+    app.exit(0); // 静默路径无窗口可优雅关闭，直接退出
+  }).catch((err) => {
     logger.error('main', `静默卸载异常：${(err && err.stack) || String(err)}`);
-    app.quit();
+    app.exit(1);
   });
 }
 
