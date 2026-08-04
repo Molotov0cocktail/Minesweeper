@@ -129,3 +129,5 @@ v3:  T14 文档链+任务文件（主 agent，W0）
     build-dist.cjs spawnSync 直启 npx.cmd 报 EINVAL（Node ≥24 不再支持不经 shell 执行批处理，
     win32 改经 cmd.exe /c 执行，命令为静态常量无注入面）。产物
     `dist/MinesweeperSetup-1.2.0-win.exe`（70.9MB），staging 校验 ui.js:356 已含修复。
+  - 用户明示新增 AGENTS.md §3 规则「作业完成闭环（红线）」：作业完成后必须重新打包
+    （npm run dist + 产物校验）+ 提交推送，纯文档改动可免打包但提交仍必须（教训沉淀）。
