@@ -9,7 +9,11 @@ app.whenReady().then(async () => {
     width: 900,
     height: 640,
     show: true,
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, '..', 'electron', 'preload.cjs'),
+    },
   });
 
   const consoleLines = [];
@@ -37,6 +41,9 @@ app.whenReady().then(async () => {
         appChildren: document.getElementById('app') ? document.getElementById('app').children.length : -1,
         modeButtons: document.querySelectorAll('.ms-mode').length,
         title: document.title,
+        hasAPI: typeof window.minesweeperAPI === 'object',
+        hasSidebarToggle: !!document.getElementById('sidebar-toggle'),
+        bodyClass: document.body.className,
       };
     })()`);
     console.log('SMOKE_RESULT ' + JSON.stringify({ consoleLines, rendererGone, failLoad, cells }));
