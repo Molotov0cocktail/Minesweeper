@@ -34,6 +34,10 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
    **git commit + push**（每次改动后都推送，仓库：`https://gitee.com/Molotov0coaktail/minesweeper`）。
 5. **集成验证**：全量 `npm test` → `scripts/smoke.cjs` 冒烟（确认页面加载/无 JS 错误/无渲染崩溃）→
    `npm run dist` 打包。
+6. **⚠️ 大作业收尾必须更新 AGENTS.md**：每完成一次大的作业（新功能、重构、接口变更、
+   结构/命令/流程变化等）后，必须回头刷新本文件的相应章节——接口速查（§5）、项目结构（§4）、
+   常用命令（§6）、测试约定（§7）——保证新会话看到的文档与现实代码一致。
+   检查方法：`grep -n "^export" src/core/*.js src/renderer/*.js` 与实际签名对比。
 
 ## 3. 规则（护栏）
 
@@ -43,6 +47,8 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 - 全部界面文案、错误信息、日志必须**中文**。
 - 接口变更必须同步更新 `detailed-design.md` 与对应测试（先测试后实现）。
 - 不确定的需求/产品决策先向用户确认，不擅自决定（参考 proposal.md §7 的决策记录模式）。
+- **完成大的作业后必须同步更新 AGENTS.md**（见 §2 第 6 步）：接口、结构、命令、测试约定
+  任何一处变化都要反映到本文件，这是本文件的维护义务，不是可选项。
 - subagent 规则：不 git commit/push、不改其他任务文件、不留 console.log 调试残留、汇报真实结果。
 - 越界访问一律安全返回（undefined/空结果），不抛异常（唯一例外：`randomMineSet` 候选池不足抛错）。
 - 数组索引约定：棋盘一维扁平索引 `idx = row * cols + col`。
