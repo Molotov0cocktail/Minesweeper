@@ -131,3 +131,7 @@ v3:  T14 文档链+任务文件（主 agent，W0）
     `dist/MinesweeperSetup-1.2.0-win.exe`（70.9MB），staging 校验 ui.js:356 已含修复。
   - 用户明示新增 AGENTS.md §3 规则「作业完成闭环（红线）」：作业完成后必须重新打包
     （npm run dist + 产物校验）+ 提交推送，纯文档改动可免打包但提交仍必须（教训沉淀）。
+  - 首次发布 Gitee Release v1.2.0（用户提供令牌并明示：重大版本更新后自动发布）：
+    scripts/publish-release.cjs（幂等：tag 已存在拒绝覆盖；凭据 GITEE_TOKEN 或
+    .local/gitee-token，严禁入库）；AGENTS.md §3 新增「发布闭环（重大版本必发 Release）」
+    与「令牌管理/更新要求」，§4/§6 同步。

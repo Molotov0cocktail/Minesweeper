@@ -10,6 +10,9 @@ release/
 # 打包 staging（剥离版游戏文件，由 scripts/build-dist.cjs 生成）
 .build/
 
+# 本地凭据/私有配置（如 .local/gitee-token 发布令牌，严禁入库）
+.local/
+
 # 应用安装副本目录（绿色版安装产物，含 install-manifest.json 等用户数据，禁止上传）
 game/
 

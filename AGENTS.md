@@ -75,8 +75,14 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 - **作业完成闭环（红线，2026-08-04 用户明示）**：任何作业（新功能/修复/重构/构建链改动）
   完成后，除全量测试与冒烟外，**必须** `npm run dist` 重新打包并校验产物
   （dist 唯一 `MinesweeperSetup-<version>-win.exe`），再 git commit + push（§2.4），
-  全部完成才算作业结束；只有纯文档/纯文案改动（不触及 src/electron/setup/scripts 产物链）
-  可免重新打包，但提交推送仍必须。教训：排行榜修复后未重打包，用户复装旧包症状依旧。
+  全部完成才算作业结束；**重大版本更新（version 提升）额外发布 Gitee Release**：
+  `git tag v<version>` 推送 + `node scripts/publish-release.cjs`（幂等，见 §6）。
+  只有纯文档/纯文案改动（不触及 src/electron/setup/ 与打包构建脚本 build-dist.cjs 等
+  产物链）可免重新打包，但提交推送仍必须。教训：排行榜修复后未重打包，用户复装旧包症状依旧。
+- **Gitee 发布令牌管理（2026-08-04 用户明示）**：发布凭据 = 环境变量 `GITEE_TOKEN` 或
+  `.local/gitee-token`（已 .gitignore，**严禁入库/打印**）。令牌更新要求：在
+  gitee.com/profile/personal_access_tokens 重新生成（勾选 projects 权限）后，同步替换
+  环境变量或 `.local/gitee-token` 文件，并在 progress.md 记录更换时间。
 - 全部界面文案、错误信息、日志必须**中文**。
 - 接口变更必须同步更新 `detailed-design.md` 与对应测试（先测试后实现）。
 - 不确定的需求/产品决策先向用户确认，不擅自决定（参考 proposal.md §7 的决策记录模式）。
@@ -126,8 +132,10 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 │   │                      （--config scripts/setup-builder.yml）→ 清理辅助产物+唯一产物校验
 │   ├── setup-builder.yml  安装器构建配置（productName MinesweeperSetup、files 白名单、
 │   │                      extraResources .build/game-app→game-app、artifactName 带版本）
-│   └── installer-e2e.cjs  端到端验收（npm run dist 后运行；静默安装/冒烟副本/移动+自愈/
-│                          --uninstall 静默卸载/外来文件+GUI 卸载，四阶段）
+│   ├── installer-e2e.cjs  端到端验收（npm run dist 后运行；静默安装/冒烟副本/移动+自愈/
+│   │                      --uninstall 静默卸载/外来文件+GUI 卸载，四阶段）
+│   └── publish-release.cjs 发布 Gitee Release（v1.2.0 起；tag v<version> 幂等校验 +
+│                           dist 唯一 exe 附件上传；凭据 GITEE_TOKEN 或 .local/gitee-token）
 ├── src/
 │   ├── core/              纯 JS 核心逻辑（Node 可单测）
 │   │   ├── modes.js       模式预设 + 自定义参数校验
@@ -151,6 +159,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 │   └── tasks/             任务文档 + progress.md（唯一进度源）
 └── dist/                  打包产物（gitignore；唯一文件 MinesweeperSetup-1.2.0-win.exe）
 .build/                    打包 staging（gitignore；剥离版游戏文件，脚本生成）
+.local/                    本地凭据/私有配置（gitignore；.local/gitee-token 发布令牌，严禁入库）
 ```
 
 ## 5. 模块接口速查
@@ -362,6 +371,9 @@ npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperS
 # 端到端安装/卸载验收：node scripts/installer-e2e.cjs（先 npm run dist；
 # 四阶段：静默安装→冒烟安装副本+移动+自愈+静默卸载→外来文件+GUI 卸载→清理；
 # 会在 D:\MinesweeperE2E 真实安装/移动/卸载，用后清理；当前 32/32 通过）
+# 发布 Gitee Release（重大版本更新后必做）：git tag v<version> && git push origin v<version>
+#   && node scripts/publish-release.cjs（幂等：tag 已发布则拒绝覆盖；产物校验；
+#   凭据 GITEE_TOKEN 环境变量或 .local/gitee-token，更新要求见 §3）
 ```
 
 ## 7. 测试约定
