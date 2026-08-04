@@ -1,0 +1,189 @@
+/* ============================================================
+   MinesweeperSetup 安装向导样式（独立安装器渲染层）
+   - 自 styles/main.css 593-718 迁移（v2 安装向导段落），选择器
+     #installer-step 改 #setup-step，id/类名保持不变
+   - 共享类（.overlay/.modal/.modal-title/.modal-actions/.ms-input/
+     .ms-btn/.ms-field/.ms-error/.ms-hint/.hidden 等）由
+     ../styles/main.css 提供，此处不重复定义
+   ============================================================ */
+
+/* ---------- setup 页面基础布局：窗口感居中 ---------- */
+#setup-root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+/* 两种视图切换（向导 / 卸载确认） */
+#setup-mode[data-mode="wizard"] #setup-uninstall {
+  display: none;
+}
+
+#setup-mode[data-mode="uninstall"] #setup-wizard {
+  display: none;
+}
+
+/* ---------- 安装向导 ---------- */
+.ms-wizard {
+  width: min(460px, 88vw);
+}
+
+.ms-wiz-page {
+  display: none;
+}
+
+#setup-step[data-step="welcome"] [data-page="welcome"],
+#setup-step[data-step="dir"] [data-page="dir"],
+#setup-step[data-step="options"] [data-page="options"],
+#setup-step[data-step="progress"] [data-page="progress"],
+#setup-step[data-step="report"] [data-page="report"] {
+  display: block;
+}
+
+/* 向导按钮按步骤显隐 */
+#setup-step .modal-actions button {
+  display: none;
+}
+
+#setup-step[data-step="welcome"] #install-next,
+#setup-step[data-step="welcome"] #install-cancel,
+#setup-step[data-step="dir"] #install-back,
+#setup-step[data-step="dir"] #install-next,
+#setup-step[data-step="dir"] #install-cancel,
+#setup-step[data-step="options"] #install-back,
+#setup-step[data-step="options"] #install-confirm,
+#setup-step[data-step="options"] #install-cancel,
+#setup-step[data-step="report"] #install-close {
+  display: inline-block;
+}
+
+#setup-step[data-step="options"] #install-confirm {
+  background: #000080;
+  border-color: #000080;
+  color: #fff;
+}
+
+.ms-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+
+/* 安装目录输入框加宽（路径较长，覆盖 main.css .ms-field input 的定宽） */
+.ms-field .ms-input {
+  width: auto;
+  flex: 1;
+}
+
+/* 进度条 */
+.ms-progress-track {
+  height: 18px;
+  padding: 2px;
+  background: #fff;
+  border: 1px solid var(--window-border);
+  box-shadow: inset 1px 1px 0 var(--face-black);
+}
+
+.ms-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(180deg, #4c4cff, #000080);
+  transition: width 0.2s ease;
+}
+
+.ms-progress-text {
+  margin: 6px 0 0;
+  text-align: center;
+}
+
+/* 报告条目（按 code 分类着色） */
+.ms-report {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.ms-report li {
+  padding: 4px 8px;
+  word-break: break-all;
+}
+
+.ms-report-summary {
+  margin: 0 0 4px;
+  font-weight: bold;
+}
+
+.report-error {
+  color: #c00;
+  background: #fff0f0;
+  border: 1px solid #f0b0b0;
+}
+
+.report-warn {
+  color: #805000;
+  background: #fff8e0;
+  border: 1px solid #e0c880;
+}
+
+.report-ok {
+  color: #006000;
+  background: #f0fff0;
+  border: 1px solid #a0d8a0;
+}
+
+/* 旧版残留清理提示区 */
+.ms-legacy-clean {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #a00;
+  background: #fff0f0;
+  border: 1px solid #f0b0b0;
+}
+
+.ms-legacy-clean button {
+  margin-left: auto;
+  flex: none;
+}
+
+/* 本文件在 main.css 之后加载：display:flex 同优先级会压过 .hidden，
+   显式组合选择器保证 hidden 生效 */
+.ms-legacy-clean.hidden,
+.ms-setup-error.hidden {
+  display: none;
+}
+
+/* ---------- setup 附加样式 ---------- */
+/* 环境错误提示条（无 preload 等场景） */
+.ms-setup-error {
+  margin-bottom: 10px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #a00;
+  background: #fff0f0;
+  border: 1px solid #f0b0b0;
+}
+
+/* 卸载确认视图 */
+.ms-uninstall-info {
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.ms-uninstall-info p {
+  margin: 6px 0;
+  word-break: break-all;
+}

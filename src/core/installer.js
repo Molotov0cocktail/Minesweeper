@@ -123,8 +123,11 @@ export function classifyOpError(op, err, ctx = {}) {
 
 /**
  * 安装计划：生成 copy 步骤（自顶向下需创建的目录）。
+ * v3 扩展：映射优先级 renames 精确命中 > relPrefix 前缀命中 > 原样；
+ * step.rel = 安装后 rel；dirs 按映射后的 dst 生成；excludes 判断用源 rel。
+ * 缺省 renames/relPrefix → 与 v2 行为逐字节一致（向后兼容）。
  */
-export function planInstall({ sourceDir, targetDir, files, excludes = [] }) {
+export function planInstall({ sourceDir, targetDir, files, excludes = [], renames = {}, relPrefix = null }) {
   const excluded = new Set(excludes);
   const steps = [];
   const dirs = [targetDir];
@@ -133,9 +136,21 @@ export function planInstall({ sourceDir, targetDir, files, excludes = [] }) {
     if (excluded.has(rel)) continue;
     const norm = toManifestPath(rel);
     if (norm === null) continue;
+    // 映射优先级：renames 精确命中 > relPrefix 前缀命中 > 原样
+    let installed = norm;
+    if (Object.prototype.hasOwnProperty.call(renames, norm)) {
+      installed = renames[norm];
+    } else if (
+      relPrefix &&
+      typeof relPrefix.src === 'string' &&
+      typeof relPrefix.dst === 'string' &&
+      norm.startsWith(relPrefix.src + '\\')
+    ) {
+      installed = relPrefix.dst + norm.slice(relPrefix.src.length);
+    }
     const src = path.join(sourceDir, norm);
-    const dst = path.join(targetDir, norm);
-    steps.push({ type: 'copy', rel: norm, src, dst });
+    const dst = path.join(targetDir, installed);
+    steps.push({ type: 'copy', rel: installed, src, dst });
     const chain = [];
     let cur = path.dirname(dst);
     while (cur !== targetDir && !seenDirs.has(cur)) {
@@ -264,10 +279,16 @@ function parseRegistryExePath(s) {
 }
 
 /**
- * 清单重定位：execPath 目录优先；否则解析注册表 UninstallString → dirname 后查清单。
+ * 清单重定位优先级链（v3）：execPath 目录优先 → 注册表 InstallLocation（去引号 trim 后
+ * 原样目录）→ 解析注册表 UninstallString exe 的 dirname；全失效 → null。
+ * registryInstallLocation 缺省 → 与 v2 行为一致（向后兼容）。
  */
-export function relocateManifestDir({ execPathDir, registryUninstallString, existsSync }) {
+export function relocateManifestDir({ execPathDir, registryInstallLocation, registryUninstallString, existsSync }) {
   if (execPathDir && existsSync(path.join(execPathDir, MANIFEST_FILE))) return execPathDir;
+  if (typeof registryInstallLocation === 'string') {
+    const loc = registryInstallLocation.replaceAll('"', '').trim();
+    if (loc && existsSync(path.join(loc, MANIFEST_FILE))) return loc;
+  }
   const exe = parseRegistryExePath(registryUninstallString);
   if (exe) {
     const dir = path.dirname(exe);

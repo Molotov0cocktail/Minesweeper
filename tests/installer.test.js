@@ -455,3 +455,167 @@ describe('formatLogLine', () => {
       .toBe('[2026-08-04 11:00:00.000] [ERROR] [main] 崩溃');
   });
 });
+
+describe('planInstall v3 扩展：renames/relPrefix 映射', () => {
+  const SRC = 'D:\\src\\app';
+  const DST = 'C:\\App';
+
+  it('renames 精确命中：step.rel/安装 dst 重命名，src 仍指向源 rel，dirs 不受影响', () => {
+    const r = planInstall({
+      sourceDir: SRC,
+      targetDir: DST,
+      files: ['MinesweeperSetup.exe', 'resources\\app.asar'],
+      renames: { 'MinesweeperSetup.exe': 'Minesweeper.exe' },
+    });
+    expect(r.steps[0]).toEqual({
+      type: 'copy',
+      rel: 'Minesweeper.exe',
+      src: 'D:\\src\\app\\MinesweeperSetup.exe',
+      dst: 'C:\\App\\Minesweeper.exe',
+    });
+    // 未命中条目不受影响
+    expect(r.steps[1].rel).toBe('resources\\app.asar');
+    expect(r.steps[1].src).toBe('D:\\src\\app\\resources\\app.asar');
+    // dirs 不含重命名影响（重命名到根目录不产生新目录）
+    expect(r.dirs).toEqual(['C:\\App', 'C:\\App\\resources']);
+  });
+
+  it('relPrefix 前缀命中：安装 rel/dst 换前缀，src 仍指向源前缀，dirs 按映射后目录链', () => {
+    const r = planInstall({
+      sourceDir: SRC,
+      targetDir: DST,
+      files: ['resources\\game-app\\index.html'],
+      relPrefix: { src: 'resources\\game-app', dst: 'resources\\app' },
+    });
+    expect(r.steps[0]).toEqual({
+      type: 'copy',
+      rel: 'resources\\app\\index.html',
+      src: 'D:\\src\\app\\resources\\game-app\\index.html',
+      dst: 'C:\\App\\resources\\app\\index.html',
+    });
+    // dirs：映射后的目录链（含 resources\app，不含 resources\game-app）
+    expect(r.dirs).toEqual(['C:\\App', 'C:\\App\\resources', 'C:\\App\\resources\\app']);
+    expect(r.dirs).not.toContain('C:\\App\\resources\\game-app');
+  });
+
+  it('映射优先级：renames 精确命中 > relPrefix 前缀命中 > 原样', () => {
+    const r = planInstall({
+      sourceDir: SRC,
+      targetDir: DST,
+      files: [
+        'MinesweeperSetup.exe',
+        'resources\\game-app\\MinesweeperSetup.exe',
+        'resources\\game-app\\index.html',
+        'locales\\zh-CN.pak',
+      ],
+      renames: { 'resources\\game-app\\MinesweeperSetup.exe': 'Minesweeper.exe' },
+      relPrefix: { src: 'resources\\game-app', dst: 'resources\\app' },
+    });
+    expect(r.steps.map((s) => s.rel)).toEqual([
+      'MinesweeperSetup.exe', // 无映射 → 原样
+      'Minesweeper.exe', // renames 精确命中（先于 relPrefix）
+      'resources\\app\\index.html', // relPrefix 前缀命中
+      'locales\\zh-CN.pak', // 原样
+    ]);
+    expect(r.steps[0].src).toBe('D:\\src\\app\\MinesweeperSetup.exe');
+    expect(r.steps[1].src).toBe('D:\\src\\app\\resources\\game-app\\MinesweeperSetup.exe');
+    expect(r.steps[1].dst).toBe('C:\\App\\Minesweeper.exe');
+    expect(r.steps[2].dst).toBe('C:\\App\\resources\\app\\index.html');
+    // dirs：自顶向下、按映射后的 dst 生成（重命名到根不产生目录）
+    expect(r.dirs).toEqual(['C:\\App', 'C:\\App\\resources', 'C:\\App\\resources\\app', 'C:\\App\\locales']);
+  });
+
+  it('excludes 先于映射判断：被排除的源 rel 不出现（含映射条目）', () => {
+    const r = planInstall({
+      sourceDir: SRC,
+      targetDir: DST,
+      files: ['MinesweeperSetup.exe', 'resources\\game-app\\index.html'],
+      excludes: ['MinesweeperSetup.exe', 'resources\\game-app\\index.html'],
+      renames: { 'MinesweeperSetup.exe': 'Minesweeper.exe' },
+      relPrefix: { src: 'resources\\game-app', dst: 'resources\\app' },
+    });
+    expect(r.steps).toEqual([]);
+    // 被排除条目不产生任何目录
+    expect(r.dirs).toEqual(['C:\\App']);
+  });
+
+  it('缺省 renames/relPrefix → 与 v2 行为逐项一致', () => {
+    const files = ['Minesweeper.exe', 'resources\\app.asar', 'locales\\zh-CN.pak'];
+    const base = { sourceDir: SRC, targetDir: DST, files };
+    const v2 = planInstall(base); // v2 签名：无 renames/relPrefix
+    const v3 = planInstall({ ...base, renames: {}, relPrefix: null });
+    const v3Undef = planInstall({ ...base, renames: {}, relPrefix: undefined });
+    expect(v3).toEqual(v2);
+    expect(v3Undef).toEqual(v2);
+    expect(v3.steps.map((s) => s.rel)).toEqual(files);
+  });
+});
+
+describe('relocateManifestDir v3 扩展：InstallLocation 优先级链', () => {
+  it('execPathDir 清单优先（即使 InstallLocation 也有清单）', () => {
+    const existsSync = vi.fn((p) => p === path.join('D:\\New', MANIFEST_FILE) || p === path.join('D:\\Old', MANIFEST_FILE));
+    const r = relocateManifestDir({
+      execPathDir: 'D:\\New',
+      registryInstallLocation: 'D:\\Old',
+      registryUninstallString: '',
+      existsSync,
+    });
+    expect(r).toBe('D:\\New');
+  });
+
+  it('execPathDir 无清单 → registryInstallLocation（含引号去引号后查清单）', () => {
+    const existsSync = vi.fn((p) => p === path.join('D:\\Minesweeper', MANIFEST_FILE));
+    const r = relocateManifestDir({
+      execPathDir: 'C:\\New',
+      registryInstallLocation: '"D:\\Minesweeper"',
+      registryUninstallString: '',
+      existsSync,
+    });
+    expect(r).toBe('D:\\Minesweeper');
+  });
+
+  it('InstallLocation 带引号与首尾空白 → 去引号并 trim 后查清单', () => {
+    const existsSync = vi.fn((p) => p === path.join('D:\\Game dir', MANIFEST_FILE));
+    const r = relocateManifestDir({
+      execPathDir: 'C:\\New',
+      registryInstallLocation: '  "D:\\Game dir"  ',
+      registryUninstallString: '',
+      existsSync,
+    });
+    expect(r).toBe('D:\\Game dir');
+  });
+
+  it('InstallLocation 无清单 → UninstallString exe 目录兜底', () => {
+    const existsSync = vi.fn((p) => p === path.join('D:\\Old', MANIFEST_FILE));
+    const r = relocateManifestDir({
+      execPathDir: 'C:\\New',
+      registryInstallLocation: 'D:\\Minesweeper',
+      registryUninstallString: '"D:\\Old\\Minesweeper.exe" --uninstall',
+      existsSync,
+    });
+    expect(r).toBe('D:\\Old');
+  });
+
+  it('execPathDir/InstallLocation/UninstallString 全失效 → null', () => {
+    const existsSync = vi.fn(() => false);
+    const r = relocateManifestDir({
+      execPathDir: 'C:\\New',
+      registryInstallLocation: '"D:\\Minesweeper"',
+      registryUninstallString: 'D:\\Old\\Minesweeper.exe --uninstall',
+      existsSync,
+    });
+    expect(r).toBeNull();
+  });
+
+  it('registryInstallLocation 缺省 → v2 行为（走 UninstallString）', () => {
+    const existsSync = vi.fn((p) => p === path.join('D:\\Old', MANIFEST_FILE));
+    const r = relocateManifestDir({
+      execPathDir: 'C:\\New',
+      registryUninstallString: 'D:\\Old\\Minesweeper.exe --uninstall',
+      existsSync,
+    });
+    expect(r).toBe('D:\\Old');
+    // 无 InstallLocation 且 UninstallString 无效 → null
+    expect(relocateManifestDir({ execPathDir: 'C:\\New', registryUninstallString: '', existsSync: vi.fn(() => false) })).toBeNull();
+  });
+});
