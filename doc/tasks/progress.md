@@ -115,3 +115,13 @@ v3:  T14 文档链+任务文件（主 agent，W0）
   静默安装（exe 重命名/unpacked resources/app/清单/注册表 UninstallString→setup exe/InstallLocation/
   快捷方式）✓ 安装副本冒烟（无 installer 面）✓ 移动目录+自愈+静默卸载（重定位链+延迟清理）✓
   外来文件保留+GUI 卸载 ✓；README/AGENTS.md/progress 已按 v3 收尾。
+- 2026-08-04 **bug 修复：排行榜按钮点击无反应**（用户反馈：点击「排行榜」后无任何窗口/改动）。
+  - 根因（subagent 定位 + 主 agent 复核实证）：ui.js「点击面板外区域隐藏面板」的 document 级 click
+    监听器与打开按钮的点击发生在同一次事件分发内——按钮监听器目标阶段先打开面板（移除 hidden），
+    同一 click 冒泡到 document 后监听器立即将面板重新隐藏，用户无感。v2 Wave C 引入；测试盲区：
+    旧按钮用例用空 mock 只断言 action 被调用、不查面板可见性。
+  - 修复（ui.js:354-356）：document 监听器忽略来自 #leaderboard-open 的点击（`leaderboardOpen.contains(e.target)`），
+    与 detailed-design §6 契约「点击面板外区域或关闭按钮隐藏」一致。
+  - 测试（红→绿）：ui.sidebar.test.js 重写按钮点击用例为甄别性测试（真实 openLeaderboard 接线 +
+    面板可见性断言，修复前 2 红）+ 新增「点击面板外→隐藏」「已展开时再点→保持可见」边界用例。
+  - 验证：全量 232/232 绿 + Electron 冒烟通过（无 JS 错误/无渲染崩溃）。

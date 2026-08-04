@@ -352,6 +352,8 @@ export function createUI(host, deps) {
   // 点击面板外区域隐藏面板
   document.addEventListener('click', (e) => {
     if (leaderboardModal.classList.contains('hidden')) return;
+    // 打开面板的按钮点击会冒泡到这里：忽略它，否则面板会在同一次事件分发内被立即关闭
+    if (leaderboardOpen.contains(e.target)) return;
     if (!leaderboardModal.contains(e.target)) {
       leaderboardModal.classList.add('hidden');
     }

@@ -138,7 +138,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 │       ├── render.js      Canvas 经典 3D 风绘制
 │       ├── ui.js          顶栏/侧栏/主页面板/横幅/暂停遮罩/昵称
 │       └── main.js        装配：鼠标/缩放/resize/设置持久化接线
-├── tests/                 Vitest 测试（14 个文件，230 用例，先于实现编写；含 setup.ui.test.js）
+├── tests/                 Vitest 测试（14 个文件，232 用例，先于实现编写；含 setup.ui.test.js）
 ├── doc/                   需求/设计/任务文档（工作流产物，改功能先改这里）
 │   ├── proposal.md        需求提案（含用户决策记录）
 │   ├── high-level-design.md / detailed-design.md
@@ -347,7 +347,7 @@ npm install   # 国内网络：ELECTRON_MIRROR=https://npmmirror.com/mirrors/ele
 npm start     # 启动游戏。注意：本机 shell 预设 ELECTRON_RUN_AS_NODE=1，需先 unset
               # （unset ELECTRON_RUN_AS_NODE && npm start）
               # 开发态启动安装器：MINESWEEPER_SETUP=1 npm start（调试 setup 向导/卸载界面）
-npm test      # 全量 Vitest（230 用例，全部必须绿）
+npm test      # 全量 Vitest（232 用例，全部必须绿）
 npm run test:watch
 npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperSetup-1.2.0-win.exe；
               # 需设上述镜像环境变量；signAndEditExecutable=false；target=portable）

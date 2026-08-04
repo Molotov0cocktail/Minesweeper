@@ -125,10 +125,34 @@ describe('防猜测设置区', () => {
 });
 
 describe('排行榜主页面板', () => {
-  it('#leaderboard-open 点击 → openLeaderboard action', () => {
-    const { host, deps } = setup();
+  it('#leaderboard-open 点击 → 面板展示且保持可见（真实 openLeaderboard 接线）', () => {
+    const { host, deps, ui } = setup();
+    deps.actions.openLeaderboard.mockImplementation(() => ui.showLeaderboard()); // 与 main.js 真实接线一致
+    const panel = $(host, '#leaderboard-modal');
     $(host, '#leaderboard-open').click();
     expect(deps.actions.openLeaderboard).toHaveBeenCalledTimes(1);
+    // 回归（v2 Wave C 引入的 bug）：完整点击流（含冒泡到 document）结束后面板必须仍然可见，
+    // 不得被"点击面板外隐藏"监听器在同一事件分发内闪关
+    expect(panel.classList.contains('hidden')).toBe(false);
+  });
+
+  it('面板展开后点击面板外区域 → 隐藏', () => {
+    const { host, ui } = setup();
+    const panel = $(host, '#leaderboard-modal');
+    ui.showLeaderboard();
+    expect(panel.classList.contains('hidden')).toBe(false);
+    $(host, '#sidebar-toggle').click(); // 面板外的元素 → 应隐藏
+    expect(panel.classList.contains('hidden')).toBe(true);
+  });
+
+  it('面板已展开时再次点击 #leaderboard-open → 面板保持可见（非开关切换）', () => {
+    const { host, deps, ui } = setup();
+    deps.actions.openLeaderboard.mockImplementation(() => ui.showLeaderboard());
+    const panel = $(host, '#leaderboard-modal');
+    $(host, '#leaderboard-open').click();
+    expect(panel.classList.contains('hidden')).toBe(false);
+    $(host, '#leaderboard-open').click();
+    expect(panel.classList.contains('hidden')).toBe(false);
   });
 
   it('面板类：含 ms-panel 不含 overlay（不再是全屏遮罩），hidden 切换语义保留', () => {
