@@ -7,12 +7,18 @@ out/
 release/
 *.exe
 
+# 应用安装副本目录（绿色版安装产物，含 install-manifest.json 等用户数据，禁止上传）
+game/
+
 # Smoke-test artifacts
 smoke-screenshot.png
 
 # Logs
 *.log
 npm-debug.log*
+
+# 临时/探测脚本（用后即删；提交前检查）
+*.tmp
 
 # OS / editor
 .DS_Store
