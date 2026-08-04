@@ -84,17 +84,26 @@ function createRunner({ logger, installerMod, getWindow }) {
     const value = line ? String(line).replace(/^.*REG_SZ\s*/, '').trim() : null;
     return { ok: !!value, value };
   };
+  /** 读取 InstallLocation 值：{ ok, value }（v3 主重定位来源；键/值不存在或 reg 失败 → ok:false） */
+  const queryRegistryInstallLocation = () => {
+    const r = runCmd('reg.exe', ['query', UNINSTALL_KEY, '/v', 'InstallLocation']);
+    if (r.error || r.status !== 0) return { ok: false, value: null };
+    const line = String(r.stdout || '').split(/\r?\n/).find((l) => /InstallLocation/.test(l));
+    const value = line ? String(line).replace(/^.*REG_SZ\s*/, '').trim() : null;
+    return { ok: !!value, value };
+  };
   /** 卸载键是否存在（旧版残留检测用） */
   const regKeyExists = () => {
     const r = runCmd('reg.exe', ['query', UNINSTALL_KEY]);
     return !r.error && r.status === 0;
   };
-  /** 写入注册表卸载项（reg.exe add /f，逐值覆盖；首个失败 → REG_FAIL 停止） */
-  const writeRegistryUninstallEntry = ({ appVersion, installDir, estimatedSizeKB, uninstallExe }) => {
+  /** 写入注册表卸载项（reg.exe add /f，逐值覆盖；首个失败 → REG_FAIL 停止）。
+   *  v3：DisplayIcon 指向安装副本 exe；UninstallString 指向 setup 磁盘 exe（--uninstall）。 */
+  const writeRegistryUninstallEntry = ({ appVersion, installDir, estimatedSizeKB, displayIconExe, uninstallExe }) => {
     const values = [
       ['DisplayName', 'REG_SZ', '扫雷 Minesweeper'],
       ['DisplayVersion', 'REG_SZ', appVersion],
-      ['DisplayIcon', 'REG_SZ', `"${uninstallExe}"`],
+      ['DisplayIcon', 'REG_SZ', `"${displayIconExe}"`],
       ['UninstallString', 'REG_SZ', `"${uninstallExe}" --uninstall`],
       ['InstallLocation', 'REG_SZ', installDir],
       ['NoModify', 'REG_DWORD', '1'],
@@ -148,8 +157,10 @@ function createRunner({ logger, installerMod, getWindow }) {
   /** InstallStatus = { installed, installDir, appVersion, legacy }（见 detailed-design §7） */
   const getStatus = () => {
     const reg = queryRegistryUninstallString();
+    const regLoc = queryRegistryInstallLocation();
     const manifestDir = relocateManifestDir({
       execPathDir: path.dirname(process.execPath),
+      registryInstallLocation: regLoc.ok ? regLoc.value : null,
       registryUninstallString: reg.ok ? reg.value : null,
       existsSync: fs.existsSync,
     });
@@ -176,13 +187,18 @@ function createRunner({ logger, installerMod, getWindow }) {
     const targetDir = path.resolve(opts.dir);
     log.info('installer', `开始安装：目标目录 ${targetDir}`);
     const reportBase = { dir: targetDir, shortcuts: [], errors: [], legacyCleaned: false };
+    const isPackaged = app.isPackaged;
 
     // 校验安装目录（PATH_INVALID 三种分支的中文文案来自 installer.js）
     let isFile = false;
     try {
       isFile = fs.statSync(targetDir).isFile();
     } catch { /* 目录不存在 → 允许创建 */ }
-    const v = validateInstallDir(targetDir, { selfDir: app.getAppPath(), isFile });
+    // 打包态 selfDir = 自身解压目录（防装进 %TEMP% 便携解压目录）；开发态 = 源码目录
+    const v = validateInstallDir(targetDir, {
+      selfDir: isPackaged ? path.dirname(process.execPath) : app.getAppPath(),
+      isFile,
+    });
     if (!v.ok) {
       const e = { code: 'PATH_INVALID', message: v.error, path: targetDir };
       log.error('installer', `${e.code}：${e.message}`);
@@ -190,12 +206,15 @@ function createRunner({ logger, installerMod, getWindow }) {
     }
 
     // 枚举源树：
-    // - 打包形态（绿色版）：完整复制自身运行时目录（exe/dll/resources/locales…），排除清单文件，
-    //   安装副本可独立运行（修复"安装后移动目录崩溃"的关键：副本自带全部运行时）
+    // - 打包形态（v3 setup 程序）：完整复制自身运行时目录（exe/dll/resources/locales…），
+    //   排除 setup 自身 app.asar 与 install-manifest.json；内嵌游戏目录 game-app 前缀映射为
+    //   安装副本 resources/app（Electron unpacked 应用目录）→ 安装副本可独立运行
     // - 开发形态（npm start）：镜像 build.files 白名单（源码树无运行时，仅预览语义）
-    const isPackaged = app.isPackaged;
     const sourceDir = isPackaged ? path.dirname(process.execPath) : app.getAppPath();
-    const files = enumSourceTree(sourceDir, { excludes: [MANIFEST_FILE], whitelist: !isPackaged });
+    const excludes = [MANIFEST_FILE, ...(isPackaged ? ['resources\\app.asar'] : [])];
+    const renames = isPackaged ? { [path.basename(process.execPath)]: 'Minesweeper.exe' } : {};
+    const relPrefix = isPackaged ? { src: 'resources\\game-app', dst: 'resources\\app' } : null;
+    const files = enumSourceTree(sourceDir, { excludes, whitelist: !isPackaged });
     log.info('installer', `源树枚举完成：${files.length} 个文件（源：${sourceDir}，${isPackaged ? '打包完整运行时' : '开发白名单'}）`);
     if (files.length === 0) {
       const e = { code: 'OP_ERROR', message: '操作失败：源目录中没有可安装的文件', path: sourceDir };
@@ -203,8 +222,8 @@ function createRunner({ logger, installerMod, getWindow }) {
       return { ok: false, ...reportBase, errors: [e] };
     }
 
-    // 安装计划（排除清单文件自身）
-    const { steps, dirs } = planInstall({ sourceDir, targetDir, files, excludes: [MANIFEST_FILE] });
+    // 安装计划（排除清单文件自身；v3 打包态含 exe 重命名与 game-app 前缀映射）
+    const { steps, dirs } = planInstall({ sourceDir, targetDir, files, excludes, renames, relPrefix });
     log.info('installer', `安装计划：${steps.length} 个复制步骤`);
 
     // 执行复制（进度事件 phase:'copy'，每步落日志）
@@ -223,14 +242,18 @@ function createRunner({ logger, installerMod, getWindow }) {
       log.info('installer', `复制完成：成功 ${stepResult.done}，跳过 ${stepResult.skipped}，失败 ${stepResult.errors.length}`);
     }
 
-    // 写入安装清单 install-manifest.json
+    // 写入安装清单 install-manifest.json（v3：files 记录安装后 rel——重命名/前缀映射后的路径）
     try {
       const relDirs = dirs.map((d) => path.relative(targetDir, d) || '.');
       const shortcuts = [];
       if (opts.desktopShortcut !== false) shortcuts.push({ type: 'desktop', path: desktopLnk() });
       if (opts.startMenuShortcut !== false) shortcuts.push({ type: 'startmenu', path: startMenuLnk() });
       const manifestJson = buildManifest({
-        appName: 'Minesweeper', appVersion: app.getVersion(), files, dirs: relDirs, shortcuts,
+        appName: 'Minesweeper',
+        appVersion: app.getVersion(),
+        files: steps.map((s) => s.rel),
+        dirs: relDirs,
+        shortcuts,
       });
       const manifestPath = path.join(targetDir, MANIFEST_FILE);
       fs.writeFileSync(manifestPath, manifestJson, 'utf8');
@@ -251,14 +274,24 @@ function createRunner({ logger, installerMod, getWindow }) {
     const estimatedSizeKB = Math.max(1, Math.round(totalBytes / 1024));
 
     // 安装副本的可执行入口：
-    // - 打包形态：<目标目录>\<exe 名>（副本自带运行时，可独立运行；快捷方式/卸载入口均指向它）
+    // - 打包形态：<目标目录>\Minesweeper.exe（setup exe 重命名；副本自带运行时，可独立运行；
+    //   快捷方式/DisplayIcon 指向它）
     // - 开发形态：当前 exe（源码预览语义，无独立运行时）
-    const installedExe = isPackaged ? path.join(targetDir, path.basename(process.execPath)) : process.execPath;
+    const installedExe = isPackaged ? path.join(targetDir, 'Minesweeper.exe') : process.execPath;
 
-    // 注册表卸载项
+    // 注册表卸载项（v3）：
+    // DisplayIcon = 安装副本 exe；UninstallString = "<setup 磁盘 exe>" --uninstall。
+    // portable 解压 exe ≠ 磁盘 exe（每次运行解压到 %TEMP%），必须用 PORTABLE_EXECUTABLE_FILE
+    // 取磁盘真实路径（控制面板/静默卸载入口才能定位到用户保存的 setup 文件）。
     sendProgress({ phase: 'registry', done: 0, total: 0, message: '写入注册表卸载项' });
+    const setupExe = process.env.PORTABLE_EXECUTABLE_FILE ||
+      path.join(path.dirname(process.execPath), path.basename(process.execPath));
     const regErr = writeRegistryUninstallEntry({
-      appVersion: app.getVersion(), installDir: targetDir, estimatedSizeKB, uninstallExe: installedExe,
+      appVersion: app.getVersion(),
+      installDir: targetDir,
+      estimatedSizeKB,
+      displayIconExe: installedExe,
+      uninstallExe: setupExe,
     });
     if (regErr) {
       errors.push({ ...regErr, path: UNINSTALL_KEY });
@@ -311,11 +344,13 @@ function createRunner({ logger, installerMod, getWindow }) {
     log.info('uninstall', '开始卸载');
     const errors = [];
 
-    // 1. 清单重定位：execPath 目录 → 注册表 UninstallString → null
+    // 1. 清单重定位（v3 链）：execPath 目录 → 注册表 InstallLocation → UninstallString 目录 → null
     const reg = queryRegistryUninstallString();
+    const regLoc = queryRegistryInstallLocation();
     if (!reg.ok) log.warn('uninstall', '注册表 UninstallString 查询失败（可能尚未安装过）');
     const manifestDir = relocateManifestDir({
       execPathDir: path.dirname(process.execPath),
+      registryInstallLocation: regLoc.ok ? regLoc.value : null,
       registryUninstallString: reg.ok ? reg.value : null,
       existsSync: fs.existsSync,
     });
