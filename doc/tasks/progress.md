@@ -125,3 +125,7 @@ v3:  T14 文档链+任务文件（主 agent，W0）
   - 测试（红→绿）：ui.sidebar.test.js 重写按钮点击用例为甄别性测试（真实 openLeaderboard 接线 +
     面板可见性断言，修复前 2 红）+ 新增「点击面板外→隐藏」「已展开时再点→保持可见」边界用例。
   - 验证：全量 232/232 绿 + Electron 冒烟通过（无 JS 错误/无渲染崩溃）。
+  - 跟进（同日晚）：用户复装旧安装包无效 → 补 `npm run dist` 重新打包；发现并修复
+    build-dist.cjs spawnSync 直启 npx.cmd 报 EINVAL（Node ≥24 不再支持不经 shell 执行批处理，
+    win32 改经 cmd.exe /c 执行，命令为静态常量无注入面）。产物
+    `dist/MinesweeperSetup-1.2.0-win.exe`（70.9MB），staging 校验 ui.js:356 已含修复。

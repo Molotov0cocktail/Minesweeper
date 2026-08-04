@@ -104,12 +104,12 @@ function rmrf(p) {
   validateStage();
 
   console.log('[3] electron-builder --win portable（setup-builder.yml）');
-  // win32 显式 .cmd 后缀即可不经 shell 启动（避免 shell:true 的参数拼接警告）
-  const r = spawnSync(
-    process.platform === 'win32' ? 'npx.cmd' : 'npx',
-    ['electron-builder', '--config', 'scripts/setup-builder.yml', '--win', 'portable'],
-    { cwd: ROOT, encoding: 'utf8', stdio: 'inherit', shell: false },
-  );
+  // win32：npx.cmd 是批处理，Node spawn 不经 shell 直启会 EINVAL（Node ≥24 实测），
+  // 必须经 cmd.exe 执行；命令为静态常量无注入面，cwd 透传不变
+  const cmd = process.platform === 'win32'
+    ? ['cmd.exe', ['/d', '/s', '/c', 'npx.cmd electron-builder --config scripts/setup-builder.yml --win portable']]
+    : ['npx', ['electron-builder', '--config', 'scripts/setup-builder.yml', '--win', 'portable']];
+  const r = spawnSync(cmd[0], cmd[1], { cwd: ROOT, encoding: 'utf8', stdio: 'inherit', shell: false });
   if (r.error || r.status !== 0) {
     console.error(`打包失败（退出码 ${r.status}）`);
     process.exit(r.status || 1);
