@@ -1,14 +1,14 @@
 # 扫雷 Minesweeper（Electron）
 
 基于 Electron 的经典扫雷桌面程序，支持自定义棋盘、拖动缩放、可配置防猜测模式（标准/高级）、
-三种标准模式排行榜，以及应用内安装/卸载管理器（绿色版分发）。
+三种标准模式排行榜。安装/卸载由**独立便携安装器 MinesweeperSetup** 负责（游戏程序本体已剥离安装功能）。
 
 ## 功能特性
 
 - **三种标准模式**：初级 9×9 / 10 雷，中级 16×16 / 40 雷，高级 16×30 / 99 雷
 - **自定义模式**：行/列 5~60，雷数 1 到 `min(⌊总数×0.8⌋, 总数−9)`
 - **左侧侧栏**：左上角汉堡按钮展开/收起；侧栏含等级选择、自定义行列雷数、防猜测设置、
-  排行榜入口、安装/卸载入口；展开时棋盘自动缩放适配
+  排行榜入口；展开时棋盘自动缩放适配
 - **拖动缩放显示**：拖动棋盘右下角缩放手柄，格子大小在 16~48px 间连续缩放；窗口缩放时棋盘自动等比适配
 - **经典交互**：
   - 左键点击未开格 → 翻开（首次点击必安全，并自动扩散空区）
@@ -25,16 +25,20 @@
 - **排行榜**：三种标准模式各分「防猜测开 / 关」两组，共 6 组；每组记录前十名昵称与用时（按用时升序）；
   侧栏「排行榜」按钮在主页展示榜单；胜利后输入昵称，成绩按"实际是否无猜"归组；数据存 localStorage；
   自定义模式不计入排行榜
-- **应用内安装/卸载管理器**（绿色版分发）：
-  - 侧栏「安装到本机」→ 向导：选择安装地址（默认 `D:\Minesweeper`，无 D 盘回退其他盘）、
-    勾选桌面/开始菜单快捷方式 → 确认后复制完整运行时 + 写卸载注册表项 + 创建快捷方式
-  - 已安装时入口变为「卸载」：**清单式删除**——只删安装清单内文件与自建目录，
+- **独立便携安装器 MinesweeperSetup**（v1.2.0，单文件 exe，游戏程序不含任何安装代码）：
+  - 双击未安装 → 安装向导：选择安装地址（默认 `D:\Minesweeper`，无 D 盘回退其他盘）、
+    勾选桌面/开始菜单快捷方式 → 确认后复制完整运行时（setup exe 重命名为 `Minesweeper.exe`，
+    内嵌游戏文件映射为 `resources/app/`）+ 写卸载注册表项 + 创建快捷方式
+  - 双击已安装 → **卸载确认**：清单式删除——只删安装清单内文件与自建目录，
     清单外文件（用户后放入）保留并提示；删除失败报具体中文原因并继续；结束后汇总报告
-  - **移动安装目录不崩溃**：所有路径运行时动态解析、卸载自动重定位；日志写入
-    `%LOCALAPPDATA%\Minesweeper\logs\`（按日轮转）
-  - 卸载入口：应用内按钮 + Windows 控制面板"卸载程序"（静默执行）
+  - **零痕迹**：setup 自身不写注册表/AppData/快捷方式，userData 与日志全部落在 %TEMP%
+    （便携解压目录退出自动删除）——删除 setup exe 即无任何印记
+  - **移动安装目录不崩溃**：游戏运行时路径动态解析；启动时自愈注册表 `InstallLocation`，
+    移动目录后 setup 仍能定位卸载；日志写入 `%LOCALAPPDATA%\Minesweeper\logs\`（按日轮转）
+  - 卸载入口：setup 双击（卸载确认）+ Windows 控制面板"卸载程序"
+    （注册表 UninstallString 指向 setup exe `--uninstall` 静默执行）
   - 旧版残留（旧 NSIS 安装目录/快捷方式/注册表项）自动检测、可一键清理
-- **中文界面**、经典 Windows 扫雷 3D 浮雕视觉风格（侧栏/面板/向导经美化升级）
+- **中文界面**、经典 Windows 扫雷 3D 浮雕视觉风格（侧栏/面板/安装向导经美化升级）
 
 ## 环境要求
 
@@ -60,12 +64,12 @@ npm run test:watch # 监听模式
 
 测试采用"测试先行"：所有行为契约先写成 `tests/`，再逐个实现。覆盖棋盘模型、可解性算法、
 防猜测重排（标准/高级）、游戏状态机/计时、排行榜存取、设置持久化、安装清单/卸载计划/错误分类、
-UI 控件与画布绘制（现有 204 用例全绿）。
+setup 安装向导 UI、游戏 UI 控件与画布绘制（现有 230 用例全绿）。
 
-## 打包（绿色版）
+## 打包（独立便携安装器）
 
 ```bash
-npm run dist       # electron-builder 生成免安装绿色版到 dist/
+npm run dist       # 生成 dist/MinesweeperSetup-<版本>-win.exe（唯一产物，便携单文件）
 ```
 
 > 中国大陆网络下需走镜像（Electron 与 electron-builder 二进制均从 GitHub 下载，直连易超时）：
@@ -75,15 +79,25 @@ npm run dist       # electron-builder 生成免安装绿色版到 dist/
 > npm run dist
 > ```
 > 本机未配置代码签名，构建已配置 `win.signAndEditExecutable: false`。
-> 产出：`dist/win-unpacked/`（免安装版，可整体拷贝分发）与 `dist/Minesweeper-<版本>-win.zip`（压缩包）。
-> 首次使用：解压/拷贝后运行 `Minesweeper.exe`，在侧栏「安装到本机」中完成正式安装
-> （选择安装地址、创建快捷方式）；已安装时同一入口变为「卸载」。
+> 流水线（`scripts/build-dist.cjs`）：清理 dist/.build → staging 剥离版游戏文件
+> （`src/core/installer.js` 与 setup 侧 electron 文件不进游戏包，自动校验）→
+> electron-builder portable（NSIS 压缩，约 70MB）→ 清理辅助产物、校验 dist 唯一产物。
+> **使用方式**：把 `MinesweeperSetup-1.2.0-win.exe` 发给用户，双击即用——
+> 未安装走安装向导；已安装显示卸载确认。setup 自身不留任何印记（删掉 exe 即清理完毕）。
 
 ## 操作说明
 
 | 操作 | 效果 |
 |---|---|
-| 左上角 ☰ | 展开/收起左侧侧栏（等级/自定义/防猜测/排行榜/安装卸载） |
+| 双击 `MinesweeperSetup-*.exe`（未安装） | 安装向导：选择安装地址、快捷方式选项 → 安装 → 报告 |
+| 双击 `MinesweeperSetup-*.exe`（已安装） | 卸载确认界面（显示目录/版本）→ 清单式卸载 → 报告 |
+| 控制面板「卸载程序」 | 静默卸载（setup exe `--uninstall`） |
+
+## 操作说明
+
+| 操作 | 效果 |
+|---|---|
+| 左上角 ☰ | 展开/收起左侧侧栏（等级/自定义/防猜测/排行榜） |
 | 左键 · 未开格 | 翻开（首点安全 + 空区扩散） |
 | 左键 · 已开数字格 | chord：旗数==数字时翻开剩余未标旗邻居 |
 | 右键 · 未开格 | 循环标记 旗→问号→无（旗数上限=总雷数） |
@@ -93,17 +107,24 @@ npm run dist       # electron-builder 生成免安装绿色版到 dist/
 | 暂停 / 继续 | 暂停计时并遮罩屏幕 |
 | 重新开始 | 按当前模式/防猜测设置重开一局 |
 | 胜利 | 输入昵称 → 若进前十写入对应组排行榜 |
-| 侧栏「安装到本机」 | 未安装：向导安装（路径+快捷方式）；已安装：卸载（清单式删除+报告） |
 
 ## 项目结构
 
 ```
-├── electron/          # Electron 主进程
-│   ├── main.cjs           # 窗口/IPC/单实例锁/--uninstall 静默卸载/崩溃日志
-│   ├── preload.cjs        # contextBridge 暴露 window.minesweeperAPI（最小 API 面）
+├── electron/          # Electron 主进程（双应用分派）
+│   ├── main.cjs           # IS_SETUP 分派；游戏侧：窗口/IPC(app:get-version)/单实例锁/
+│   │                      #   崩溃日志 + 打包态 InstallLocation 自愈
+│   ├── setup.cjs          # 安装器主进程：窗口 + CLI（--uninstall/--install-dir/--no-*-shortcut）
+│   │                      #   + installer IPC 6 通道；userData/日志重定向 %TEMP%（零痕迹）
+│   ├── preload.cjs        # 游戏侧 API（仅 app.getVersion）
+│   ├── preload-setup.cjs  # 安装器侧 API（app.getVersion + installer 6 方法 + 进度）
 │   ├── installer-runner.cjs # 安装/卸载真实副作用执行（fs/注册表/快捷方式，薄胶水）
 │   ├── fs-utils.cjs       # 源树枚举/目标树扫描/递归删除
-│   └── log.cjs            # 按日轮转日志（%LOCALAPPDATA%\Minesweeper\logs\）
+│   └── log.cjs            # 按日轮转日志（dir 可覆盖：游戏 %LOCALAPPDATA%，setup %TEMP%）
+├── setup/              # 安装器渲染层
+│   ├── index.html         # 安装向导/卸载确认页面（CSP 同游戏）
+│   ├── ui.js              # createSetupUI/startSetupApp（向导 5 步 + 卸载确认 + legacy 清理）
+│   └── wizard.css         # 向导样式（自 styles/main.css 迁移）
 ├── src/
 │   ├── core/          # 纯 JS 核心逻辑（可独立单测）
 │   │   ├── board.js       # 棋盘模型：布雷/翻开/chord/标记/胜负
@@ -112,14 +133,19 @@ npm run dist       # electron-builder 生成免安装绿色版到 dist/
 │   │   ├── modes.js       # 模式预设 + 自定义参数校验
 │   │   ├── leaderboard.js # localStorage 排行榜（top-10 × 模式 × 防猜测）
 │   │   ├── settings.js    # 防猜测设置持久化（损坏/越界自动回退默认）
-│   │   └── installer.js   # 安装清单/卸载计划/错误分类/路径重定位（纯逻辑零副作用）
-│   └── renderer/      # 渲染与交互层
+│   │   └── installer.js   # 安装清单/卸载计划/错误分类/路径重定位/映射（纯逻辑零副作用，
+│   │                      #   仅安装器打包，游戏不含）
+│   └── renderer/      # 渲染与交互层（无任何安装相关代码）
 │       ├── render.js      # Canvas 经典 3D 风绘制
-│       ├── ui.js          # 顶栏/侧栏/主页面板/安装向导/弹窗/横幅
-│       └── main.js        # 事件装配/缩放/resize/设置持久化接线/IPC 调用
-├── styles/main.css    # 经典扫雷风格样式（侧栏/面板/向导美化）
-├── scripts/smoke.cjs  # 冒烟诊断（加载页面/收集错误/截图/检查 DOM）
-├── tests/             # Vitest 测试（先行编写）
+│       ├── ui.js          # 顶栏/侧栏/主页面板/弹窗/横幅
+│       └── main.js        # 事件装配/缩放/resize/设置持久化接线
+├── styles/main.css    # 经典扫雷风格样式（侧栏/面板美化）
+├── scripts/
+│   ├── smoke.cjs          # 冒烟诊断（含深断言：无 installer 面）
+│   ├── build-dist.cjs     # 打包流水线（清理→staging→portable→校验）
+│   ├── setup-builder.yml  # 安装器构建配置（electron-builder portable）
+│   └── installer-e2e.cjs  # 端到端验收（静默安装/冒烟副本/移动自愈/卸载/GUI 卸载）
+├── tests/             # Vitest 测试（先行编写，含 setup.ui.test.js）
 ├── index.html
 └── doc/               # 需求/设计/任务文档（vibe-coding 工作流产物）
 ```
@@ -133,9 +159,13 @@ npm run dist       # electron-builder 生成免安装绿色版到 dist/
   验证不引入新猜测；全局 deduce 预算封顶保证最坏情况耗时可控；失败自动回退标准方式。
 - **防猜测关闭**：雷密度 >50% 或重排耗尽仍不可解时，该局按普通扫雷继续（保留首点安全），
   横幅提醒具体原因。被强制关闭的对局成绩计入"防猜测关"榜单。
-- **安装/卸载**：安装 = 复制完整运行时 + 写安装清单（相对路径）+ 注册表卸载项 + 快捷方式；
+- **独立安装器**：安装 = 复制 setup 自身完整运行时（排除自身 app.asar；setup exe 重命名
+  `Minesweeper.exe`）+ 内嵌游戏目录映射为 `resources/app/` + 写安装清单（安装后相对路径）+
+  注册表卸载项（UninstallString 指向 setup 磁盘 exe `--uninstall`、InstallLocation）+ 快捷方式；
   卸载 = 清单式删除（只删清单内文件，外来文件保留并提示；失败分类报错继续）+ 占用文件
-  延迟清理脚本重试删除；移动目录后通过清单/注册表自动重定位，不依赖固定绝对路径。
+  延迟清理脚本重试删除；重定位链 = 自身目录 → 注册表 InstallLocation → UninstallString 目录；
+  游戏启动自愈 InstallLocation（移动目录后仍可卸载）；setup 零痕迹（userData/日志全在
+  %TEMP%，便携解压目录退出自动删除）。
 
 ## 致谢
 

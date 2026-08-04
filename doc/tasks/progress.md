@@ -43,13 +43,13 @@ v3:  T14 文档链+任务文件（主 agent，W0）
 | T11 | electron 主进程（preload/IPC/runner/log + 冒烟更新） | T8 | ⬜ | node --check + 冒烟 | v2 Wave B |
 | T12 | renderer 侧栏+面板+安装向导+美化 | T7+T10+T11 | ⬜ | `npx vitest run tests/ui.test.js tests/ui.sidebar.test.js` + 冒烟 | v2 Wave C |
 | T13 | 打包 dir/zip + 全量验证 + README + AGENTS.md | 全部 | ✅ | `npm test` 205/205 + 冒烟 + `npm run dist` + E2E 20/20 | v2 Wave D |
-| T14 | **v3 文档链 + 任务文件 t15~t20 + progress** | 无 | 🟨 | 文档一致性自查 | v3 W0（主 agent） |
-| T15 | setup UI（setup/ui.js + wizard.css + index.html） | 无 | ⬜ | `npx vitest run tests/setup.ui.test.js` | v3 Wave A |
-| T16 | installer.js 扩展（planInstall renames/relPrefix + relocateManifestDir InstallLocation） | 无 | ⬜ | `npx vitest run tests/installer.test.js` | v3 Wave B |
-| T17 | electron setup（setup.cjs + preload-setup.cjs + runner 适配 + IS_SETUP 分派） | T15+T16 | ⬜ | node --check + `npm test` | v3 Wave C |
-| T18 | 游戏剥离（ui/main/preload/main.cjs/styles/tests/smoke + 自愈 InstallLocation） | 无 | ⬜ | ui 测试 + 冒烟（noInstallerApi=true）+ `npm test` | v3 Wave D |
-| T19 | 打包（build-dist.cjs + setup-builder.yml + package.json v1.2.0 + 清理） | T17+T18 | ⬜ | `npm run dist` → dist 唯一产物 | v3 Wave E |
-| T20 | E2E 四阶段重写 + README/AGENTS/progress 收尾 + 全量验收 | T19 | ⬜ | `node scripts/installer-e2e.cjs` 20/20 + `npm test` 全绿 | v3 Wave F |
+| T14 | **v3 文档链 + 任务文件 t15~t20 + progress** | 无 | ✅ | 文档一致性自查 | v3 W0（主 agent） |
+| T15 | setup UI（setup/ui.js + wizard.css + index.html） | 无 | ✅ | `npx vitest run tests/setup.ui.test.js` 17/17 | v3 Wave A |
+| T16 | installer.js 扩展（planInstall renames/relPrefix + relocateManifestDir InstallLocation） | 无 | ✅ | `npx vitest run tests/installer.test.js` 55/55 | v3 Wave B |
+| T17 | electron setup（setup.cjs + preload-setup.cjs + runner 适配 + IS_SETUP 分派） | T15+T16 | ✅ | node --check 4/4 + `npm test` 230/230 + dev setup 冒烟 | v3 Wave C |
+| T18 | 游戏剥离（ui/main/preload/main.cjs/styles/tests/smoke + 自愈 InstallLocation） | 无 | ✅ | ui 测试 + 冒烟（noInstallerApi=true）+ `npm test` 230/230 | v3 Wave D |
+| T19 | 打包（build-dist.cjs + setup-builder.yml + package.json v1.2.0 + 清理） | T17+T18 | ✅ | `npm run dist` → dist 唯一产物 70.9MB | v3 Wave E |
+| T20 | E2E 四阶段重写 + README/AGENTS/progress 收尾 + 全量验收 | T19 | ✅ | `node scripts/installer-e2e.cjs` 32/32 + `npm test` 230/230 | v3 Wave F |
 
 ## 运行日志
 - 2026-08-03 需求确认完成（4 轮提问，12 项决策）。
@@ -96,3 +96,22 @@ v3:  T14 文档链+任务文件（主 agent，W0）
 - 2026-08-04 v3 文档链更新（T14）：proposal（FR9 去安装入口 / FR10 重写 + 决策记录 v3 行）、
   high-level-design（双应用架构）、detailed-design（§5c 签名扩展、§6 删除契约、§6b setup UI、
   §7 setup.cjs/CLI/preload 拆分/打包、§8 测试规格、§9 依赖图 v3）、任务文件 t15~t20、progress 更新。
+- 2026-08-04 v3 Wave A 完成：T15 setup UI（setup/ui.js + wizard.css + index.html，17/17）。
+- 2026-08-04 v3 Wave B 完成：T16 installer.js 扩展（planInstall renames/relPrefix、relocateManifestDir
+  InstallLocation 链，+11 用例 55/55）。全量 233/233 绿（Wave A+B 合并提交）。
+- 2026-08-04 v3 Wave D 完成：T18 游戏剥离（ui.js/main.js/preload.cjs/main.cjs/styles 删 696 行，
+  无 installer 面；main.cjs 打包态 InstallLocation 自愈；smoke 深断言 hasGetVersion/noInstallerApi/
+  noInstallerOpenBtn；新增 2 条剥离回归测试），230/230 绿 + 冒烟通过。
+- 2026-08-04 v3 Wave C 完成：T17 electron setup（setup.cjs 窗口/CLI/IPC + userData/日志 %TEMP% 零痕迹、
+  preload-setup.cjs、installer-runner 打包态安装适配：排除 app.asar、exe 重命名、game-app→resources/app
+  前缀映射、UninstallString 指向 setup 磁盘 exe（PORTABLE_EXECUTABLE_FILE）、重定位链含 InstallLocation），
+  node --check 4/4 + 230/230 绿 + dev 态 setup 冒烟验证（CDP 确认向导视图）。
+- 2026-08-04 v3 Wave E 完成：T19 打包流水线（build-dist.cjs：清理→staging 剥离版游戏（白名单+校验）→
+  electron-builder portable→清理+唯一产物校验；setup-builder.yml；package.json v1.2.0；
+  主 agent 修复 staging rel 前缀 bug 与 win-unpacked 中间产物清理），产物
+  `dist/MinesweeperSetup-1.2.0-win.exe`（70.9MB）。
+- 2026-08-04 v3 Wave F 完成：T20 E2E 四阶段重写（主 agent 修复 CDP 时序竞态：加 waitFor 轮询
+  等 module 执行与报告渲染），**端到端 32/32 通过**：
+  静默安装（exe 重命名/unpacked resources/app/清单/注册表 UninstallString→setup exe/InstallLocation/
+  快捷方式）✓ 安装副本冒烟（无 installer 面）✓ 移动目录+自愈+静默卸载（重定位链+延迟清理）✓
+  外来文件保留+GUI 卸载 ✓；README/AGENTS.md/progress 已按 v3 收尾。
