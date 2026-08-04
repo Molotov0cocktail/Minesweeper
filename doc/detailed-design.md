@@ -494,10 +494,16 @@ classifyOpError(op, err, ctx={}) -> { code, message }
 //     'manifest'→MANIFEST_MISSING('安装清单缺失或损坏：<ctx.path>（无法清单式卸载）')；
 //     其他→OP_ERROR('操作失败：<msg>')；其中 <msg> = err.message || String(err)
 
-planInstall({sourceDir, targetDir, files, excludes}) -> { steps, dirs }
+planInstall({sourceDir, targetDir, files, excludes, renames = {}, relPrefix = null}) -> { steps, dirs }
 // files: 源树枚举出的相对路径数组；excludes: 需排除的相对路径（如清单文件）
-// steps: [{ type:'copy', src:<绝对>, dst:<绝对>, rel }]；dirs: 需创建的目录绝对路径（自顶向下）
-// src = path.join(sourceDir, rel)；dst = path.join(targetDir, rel)
+// renames: Record<源rel, 安装rel>（精确命中，如 { 'MinesweeperSetup.exe': 'Minesweeper.exe' }）
+// relPrefix: { src, dst } | null（v3：内嵌游戏目录前缀映射，如
+//            { src: 'resources\\game-app', dst: 'resources\\app' }，命中 src 前缀 → dst 前缀）
+// 映射优先级：renames 精确命中 > relPrefix 前缀命中 > 原样
+// steps: [{ type:'copy', src:<绝对>, dst:<绝对>, rel }]；**step.rel = 安装后实际 rel**
+// （清单据此构建；src = path.join(sourceDir, 源 rel)，dst = path.join(targetDir, 安装 rel)）
+// dirs: 需创建的目录绝对路径（自顶向下，按映射后的 rel 生成）
+// 缺省 renames/relPrefix → 行为与 v2 完全一致（向后兼容）
 
 planUninstall({manifest, tree}) -> { toDelete, skippedExtraneous, skippedMissing }
 // tree: { files: string[], dirs: string[] } 磁盘实际扫描（调用方枚举，绝对路径，含安装根目录）
@@ -511,10 +517,14 @@ planUninstall({manifest, tree}) -> { toDelete, skippedExtraneous, skippedMissing
 //       安装清单自身（install-manifest.json）在磁盘存在时纳入删除（清单不列出自身，
 //       否则残留使根目录永远非空无法删净），且不报为清单外
 
-relocateManifestDir({execPathDir, registryUninstallString, existsSync}) -> string|null
-// 优先级：execPathDir 下存在清单（existsSync 注入）→ execPathDir；
-//         否则从 registryUninstallString 解析出 exe 路径（去引号、取首个 token）→
-//         path.dirname 后其下存在清单 → 该目录；否则 null
+relocateManifestDir({execPathDir, registryInstallLocation, registryUninstallString, existsSync}) -> string|null
+// 优先级链（v3）：execPathDir 下存在清单（existsSync 注入）→ execPathDir；
+//   registryInstallLocation（v3 新增，注册表 InstallLocation 原样目录，含引号时去除）
+//   下存在清单 → 该目录；
+//   否则从 registryUninstallString 解析出 exe 路径（去引号、取首个 token）→
+//   path.dirname 后其下存在清单 → 该目录；否则 null
+// 说明：v3 起 UninstallString 指向 setup exe（其目录无清单），InstallLocation 是
+// 主重定位来源；UninstallString 目录仅兼容 v2 旧安装；新参数缺省 → v2 行为（向后兼容）
 
 suggestInstallDir(drives) -> string
 // drives: 非系统盘符数组（如 ['D','E','F']，调用方枚举）；第一个 → `<盘>:\Minesweeper`；
@@ -574,7 +584,11 @@ formatLogLine(level, module, message, ts) -> string
 - classifyFsError / classifyOpError 全表映射（含 ENOSPC 文案）
 - planUninstall：清单内存在→删；清单内缺失→skippedMissing；清单外→skippedExtraneous；
   含清单外内容的目录→跳过；文件先删、目录自底向上
-- relocateManifestDir：execPath 优先/注册表重定位/双失效→null
+- planInstall（v3）：renames 重命名生效且 step.rel=安装后 rel；relPrefix 前缀映射
+  （game-app → resources/app）；优先级 renames > relPrefix > 原样；dirs 按映射后 rel；
+  缺省参数与 v2 行为一致
+- relocateManifestDir：execPath 优先/InstallLocation 重定位/UninstallString 重定位/
+  引号路径/三重失效→null/新参数缺省向后兼容
 - suggestInstallDir：有 D/无 D 有 E/全无兜底三分支
 - detectLegacy 各标志位（注入 existsSync）
 - validateInstallDir：非绝对/自身目录/已存在非目录
@@ -604,7 +618,7 @@ formatLogLine(level, module, message, ts) -> string
 | `#leaderboard-modal` + `#leaderboard-tabs` + `#leaderboard-body` + `#leaderboard-close` + `#leaderboard-hint` | **主页面板**（class 由 `overlay` 改为 `ms-panel`，不再全屏遮罩；隐藏语义仍用 `hidden` 类切换） |
 | `#board-canvas` / `#board-wrap` / `#scale-handle` | 画布 / 容器 / 缩放手柄（main.js） |
 
-**v2 新增契约：**
+**v2/v3 新增契约：**
 | id / 选择器 | 用途 |
 |---|---|
 | `#sidebar-toggle` | 汉堡按钮（顶栏左上角，三条横线） |
@@ -614,31 +628,26 @@ formatLogLine(level, module, message, ts) -> string
 | `#ag-region-attempts` | 区域重排次数 number（1~200；method=standard 时 disabled） |
 | `#ag-settings-hint` | 防猜测设置区提示文案 |
 | `#leaderboard-open` | 侧栏"排行榜"按钮（点击后主页展示面板） |
-| `#installer-open` | 侧栏"安装到本机 / 卸载"按钮 |
-| `#installer-modal` + `#installer-step`（data-step） | 安装/卸载向导弹窗与步骤容器 |
-| `#install-dir-input` + `#install-dir-suggest` + `#install-dir-error` | 安装目录输入 / 建议按钮（填入默认）/ 校验错误 |
-| `#install-desktop-chk` + `#install-startmenu-chk` | 桌面 / 开始菜单快捷方式 checkbox（默认勾选） |
-| `#install-progress-track` + `#install-progress-fill` + `#install-progress-text` | 安装进度条 |
-| `#install-report` | 卸载/安装结果报告（`li[data-code]` 渲染错误分类） |
-| `#install-next` / `#install-back` / `#install-confirm` / `#install-cancel` / `#install-close` | 向导按钮 |
-| `#installer-legacy-clean` | 旧版残留清理提示区（条件显示） |
 
-### renderer/ui.js —— 可测 DOM 层
+> **v3 删除契约**（安装/卸载从游戏剥离，以下 id 不再存在于游戏 DOM，ui.test.js/
+> ui.sidebar.test.js 不得再断言）：`#installer-open`、`#installer-modal`、
+> `#installer-step`、`#install-dir-input/-suggest/-error`、`#install-desktop-chk`、
+> `#install-startmenu-chk`、`#install-progress-track/fill/text`、`#install-report`、
+> `#install-next/back/confirm/cancel/close`、`#installer-legacy-clean`。
+> 上述 DOM 契约整体迁移至 setup 程序（见 §6b），id 保持不变以复用 CSS/测试模式。
+
+### renderer/ui.js —— 可测 DOM 层（v3 已剥离安装/卸载）
 ```js
 export function createUI(host, deps)
 // deps: { leaderboard, getState: () => gameSnapshot,
 //         actions: { selectMode, applyCustom, toggleAntiGuess, pause, resume, restart, submitNickname,
 //                    toggleSidebar, setAntiGuessMethod, setMaxAttempts, setMaxRegionAttempts,
-//                    openLeaderboard, openInstaller, runInstall, runUninstall, runCleanLegacy } }
+//                    openLeaderboard } }
 // -> {
 //    setMineCount(n), setTime(ms), setPauseOverlay(visible), setAntiGuessActive(active),
 //    showBanner(msg), hideBanner(), showNicknamePrompt({ timeMs, mode, antiGuessActive }),
 //    showLeaderboard(hint?), setCustomError(msg),
 //    setAntiGuessSettings({method, maxAttempts, maxRegionAttempts}),   // 回填设置区
-//    setInstallerLabel(label),      // '安装到本机' | '卸载'
-//    showInstallerWizard(step, payload),   // step: 'welcome'|'dir'|'options'|'progress'|'report'
-//    setInstallerProgress({done, total, message}),
-//    showInstallerReport(result),  // 渲染 li[data-code] 错误分类列表
 //    getSidebarOpen() -> boolean,
 // }
 ```
@@ -647,10 +656,8 @@ export function createUI(host, deps)
   按 `(mode, antiGuess)` 标签页展示 6 组榜单；点击面板外区域或关闭按钮隐藏
 - 防猜测设置区：控件 change → 对应 action；`setAntiGuessSettings` 回填控件值；
   method=standard 时 `#ag-region-attempts` 置 disabled，advanced 时启用
-- 安装向导：`showInstallerWizard(step, payload)` 切换 `#installer-step[data-step]`；
-  报告区 `li[data-code]` 按 code 加语义类（error/warn/ok）
 - 昵称提交：调用 `deps.actions.submitNickname(nickname)`；UI 层负责先 `isTopTen` 判断，进前十才弹输入
-- jsdom 测试覆盖：按钮回调触发、横幅显隐、面板内容、计时/雷数刷新、侧栏开合、设置联动、向导步骤
+- jsdom 测试覆盖：按钮回调触发、横幅显隐、面板内容、计时/雷数刷新、侧栏开合、设置联动
 
 ### renderer/render.js —— 画布绘制
 ```js
@@ -670,24 +677,90 @@ export function drawCell(ctx, x, y, size, cell, gameState)
 - 装配 ui.js 事件与 game 事件（win/lose/warning → 弹窗/横幅）
 - 防猜测设置流：启动时 `settings.get()` 回填 UI 并作为默认对局配置；
   toggle/method/attempts change → `settings.update(...)` 持久化并作用于当前/后续对局
-- 安装/卸载流：`openInstaller` → `minesweeperAPI.installer.getStatus()`（preload 缺失时优雅降级提示）→ 向导 → 确认 → `install(opts)`（监听 progress 事件更新进度条）→ 报告；`uninstall` 前二次确认 → 执行 → 报告；已安装时 `#installer-open` 文案为"卸载"
+- **v3：无任何安装/卸载流**（window.minesweeperAPI 仅含 app.getVersion，无 installer 面）
+
+## 6b. setup 程序（v3 新增：setup/ 渲染层 + 安装器 UI）
+
+独立安装器 MinesweeperSetup 的渲染层（`setup/` 目录），与游戏 renderer 完全隔离；
+`setup/index.html` link `../styles/main.css`（共享类 .overlay/.modal/.ms-input/.ms-btn/
+.hidden 等）与 `./wizard.css`（从 styles/main.css 迁移的向导样式）。
+
+```js
+export function createSetupUI(host, deps)
+// deps: { actions: { suggestDir, startInstall(opts), runUninstall, runCleanLegacy, exit } }
+// -> {
+//    showStatus(status),            // { installed, installDir, appVersion, legacy }
+//    showStep(step, payload),       // step: 'welcome'|'dir'|'options'|'progress'|'report'
+//    setProgress({done, total, message}),
+//    showReport(result),            // 渲染 li[data-code]（error/warn/ok 语义类）
+//    showUninstallConfirm({dir, appVersion}),
+//    showLegacyPrompt(legacy),
+// }
+export function startSetupApp()
+// 内置 window.minesweeperAPI 接线（可选链守卫；无 preload 时操作显示中文错误提示不崩）
+```
+
+DOM 契约（复用向导类名与 id，CSS 从 main.css 迁移）：
+| id / 选择器 | 用途 |
+|---|---|
+| `#setup-root` | 挂载点（index.html 静态提供） |
+| `#setup-mode[data-mode=wizard\|uninstall]` | 向导 / 卸载确认 两种视图切换 |
+| `#setup-step[data-step]` | 向导步骤容器（welcome/dir/options/progress/report） |
+| `#install-dir-input` / `#install-dir-suggest` / `#install-dir-error` | 安装目录输入 / 建议按钮 / 校验错误 |
+| `#install-desktop-chk` / `#install-startmenu-chk` | 快捷方式 checkbox（默认勾选） |
+| `#install-progress-track` / `#install-progress-fill` / `#install-progress-text` | 进度条 |
+| `#install-report` | 结果报告（`li[data-code]`） |
+| `#install-next` / `#install-back` / `#install-confirm` / `#install-cancel` / `#install-close` | 向导按钮 |
+| `#uninstall-dir` / `#uninstall-version` / `#uninstall-confirm-btn` | 卸载确认视图：目录 / 版本 / 确认卸载 |
+| `#installer-legacy-clean` | 旧版残留清理提示区（条件显示） |
+
+- 流程：`startSetupApp()` → `getStatus()` → installed ? 卸载确认视图 : 向导（welcome）
+- 向导：welcome（欢迎+遗留清理提示）→ dir（suggestDir 预填，输入校验）→ options →
+  confirm（`startInstall({dir, desktopShortcut, startMenuShortcut})` + 进度订阅）→ report
+- 卸载：`runUninstall()`（二次确认按钮）→ 进度 → report
+- jsdom 测试（tests/setup.ui.test.js）：步骤切换、卸载视图、进度条、报告分类渲染、
+  legacy 提示显隐、按钮 action 接线、无 preload 不崩
 
 ## 7. Electron 壳与工程配置
 
-### electron/main.cjs
-- `BrowserWindow({ width: 900, height: 640, minWidth: 480, minHeight: 360, autoHideMenuBar: true,
-                    webPreferences: { contextIsolation: true, nodeIntegration: false,
-                                      preload: <preload.cjs> } })`
-- **鲁棒性**（移动目录不崩溃）：所有路径运行时从 `process.execPath`/`app.getAppPath()` 动态解析，
-  进程内不缓存安装目录绝对路径；`uncaughtException`/`unhandledRejection` → 写日志不闪退
-- **单实例锁**：`app.requestSingleInstanceLock()`，拿不到锁即 `app.quit()`；
-  `second-instance` 时若 argv 含 `--uninstall` 转发给已运行实例
-- **`--uninstall` 入口**（控制面板 UninstallString 调用）：不创建窗口，静默执行卸载流程
-  （重定位清单 → planUninstall → executeSteps → 清理注册表/快捷方式 → 报告写日志 → `app.quit()`）
-- IPC handler 注册（见下）
+### electron/main.cjs（v3 双应用分派入口）
+- **顶部（require 之后、一切逻辑之前）**：
+```js
+const isSetup = process.env.MINESWEEPER_SETUP === '1' ||
+  fs.existsSync(path.join(path.dirname(app.getAppPath()), 'game-app'));
+if (isSetup) { require('./setup.cjs'); return; }   // CJS 顶层 return 合法
+```
+- **游戏侧**：`BrowserWindow({ width: 900, height: 640, minWidth: 480, minHeight: 360,
+  autoHideMenuBar: true, webPreferences: { contextIsolation: true, nodeIntegration: false,
+  preload: <preload.cjs> } })`；鲁棒性（路径运行时解析不缓存 + uncaughtException/
+  unhandledRejection 写日志不闪退）；单实例锁（无 second-instance 转发）；
+  仅注册 `app:get-version` 一个 IPC handler（senderFrame 校验保留）
+- **打包态自愈 InstallLocation**（游戏侧，仅 `app.isPackaged`）：
+  `reg.exe query <UNINSTALL_KEY> /v InstallLocation` → 值 ≠ dirname(process.execPath)
+  且自身目录存在 install-manifest.json → `reg.exe add ... InstallLocation` 更新；
+  失败仅 log.warn 不阻断启动（UNINSTALL_KEY 常量在 main.cjs 内联硬编码，注明来源
+  src/core/installer.js，游戏不打包该模块）
 
-### IPC 与 preload（v2 新增）
-- `electron/preload.cjs`（CommonJS，contextBridge）暴露最小 API 面：
+### electron/setup.cjs（v3 新增，安装器主进程）
+- 由 main.cjs IS_SETUP 分派 require() 后接管 app 生命周期；入口顺序：
+  `app.setPath('userData', <os.tmpdir()/MinesweeperSetup-userdata>)`（零痕迹）→
+  `createLogger({ dir: <os.tmpdir()/MinesweeperSetup/logs> })`（%TEMP% 自动清理）
+- CLI 解析（process.argv）：
+  - `--uninstall`：静默卸载（UninstallString 入口；不建窗口；完成后清理子进程 +
+    `app.exit(0|1)`）
+  - `--install-dir <dir>`：静默安装（默认建桌面+开始菜单快捷方式；
+    `--no-desktop-shortcut` / `--no-startmenu-shortcut` 可关；完成后 app.exit）
+  - 无参数：GUI 窗口 `BrowserWindow({ width: 520, height: 480, autoHideMenuBar: true,
+    webPreferences: { contextIsolation, nodeIntegration: false, preload: preload-setup.cjs } })`
+    → loadFile `setup/index.html` → ready 后 `getStatus()` → installed ? 卸载视图 : 向导
+- IPC 注册（senderFrame 校验 + install 入参校验逻辑从 v2 main.cjs 迁移）：
+  `app:get-version`、`installer:get-status/suggest-dir/install/uninstall/clean-legacy` +
+  `installer:progress` 事件；runner = `createRunner({ logger, installerMod, getWindow })`
+- 单实例锁：拿不到锁即退出（防双开向导）
+
+### IPC 与 preload（v3 拆分）
+- `electron/preload.cjs`（游戏侧）：仅 `app: { getVersion }`
+- `electron/preload-setup.cjs`（setup 侧）：v2 preload 全文（app.getVersion + installer 6 方法 + onProgress）
 ```js
 contextBridge.exposeInMainWorld('minesweeperAPI', {
   app: { getVersion: () => ipcRenderer.invoke('app:get-version') },
@@ -703,6 +776,12 @@ contextBridge.exposeInMainWorld('minesweeperAPI', {
   },
 });
 ```
+- 固定通道白名单；senderFrame 校验；install 入参校验（绝对路径防穿越 + boolean）
+- 进度事件 `{ phase:'copy'|'registry'|'shortcut'|'cleanup', done, total, message }`
+- `InstallStatus = { installed:boolean, installDir:string|null, appVersion:string,
+  legacy:{ oldNsisDir, oldShortcuts:[], oldRegistry:boolean } }`
+- 渲染层一律 `window.minesweeperAPI?.installer` 可选链守卫
+```
 - **固定通道白名单**（无动态 channel）；每个 handler 校验 `event.senderFrame === win.webContents.mainFrame`
 - 入参校验在主进程：`dir` 必须绝对路径、`path.resolve` 后 `startsWith(<允许根>)` 防穿越；
   shortcut 必须 boolean；非法 → `{ ok:false, errors:[{ code:'BAD_ARG', message:'参数无效：...' }] }`
@@ -712,49 +791,68 @@ contextBridge.exposeInMainWorld('minesweeperAPI', {
 - 渲染层一律 `window.minesweeperAPI?.installer` 可选链守卫（无 preload 环境不崩）
 
 ### electron/installer-runner.cjs（薄胶水，无业务决策）
-- 真实副作用执行者：`fs`（readdir/stat/copyFile/unlink/rmdir）、
+- 真实副作用执行者：`original-fs`（Electron asar 补丁 fs 无法复制 .asar 结尾源文件）、
   `reg.exe add|delete|query`（超时 15s，非零退出 → REG_FAIL）、
   `powershell -NoProfile -ExecutionPolicy Bypass`（WScript.Shell 创建/删除 .lnk，→ SHORTCUT_FAIL）
-- **安装源语义（v2 修正）**：
-  - 打包形态（`app.isPackaged`）：源目录 = `dirname(process.execPath)`（完整运行时：
-    exe/dll/resources/locales…），**枚举整目录**（排除 install-manifest.json）→ 安装副本可独立运行
-  - 开发形态：源目录 = `app.getAppPath()`，按 build.files 白名单枚举（源码树无运行时，预览语义）
-  - 快捷方式/注册表卸载项一律指向**安装副本 exe**（打包：`<目标目录>\<exe 名>`；开发：当前 exe），
-    工作目录 = 目标目录
-- 卸载项值：`DisplayName=扫雷 Minesweeper`、`DisplayVersion`、`DisplayIcon=<安装副本 exe>`、
-  `UninstallString="<安装副本 exe>" --uninstall`、`InstallLocation`、`NoModify=1`、`NoRepair=1`、`EstimatedSize(KB)`
-- 卸载自删：自身 exe/资源因占用删除失败 → 生成 `%TEMP%\minesweeper-uninstall-<ts>.bat`
-  （`buildUninstallCleanupScript`）→ `start "" cmd /c <bat>` 分离启动 → 报告后 `app.quit()`
+- **安装源语义（v3 打包形态 = setup 程序）**：
+  - 打包形态（`app.isPackaged`）：源目录 = `dirname(process.execPath)`（便携解压目录：
+    exe/dll/locales/resources/app.asar/resources/game-app…），**枚举整目录**，排除
+    `install-manifest.json` 与 `resources\app.asar`（setup 自身代码）；
+    `planInstall` 传 `renames: { '<setup exe 名>': 'Minesweeper.exe' }`（exe 重命名）与
+    `relPrefix: { src: 'resources\\game-app', dst: 'resources\\app' }`（内嵌游戏 → 安装副本
+    unpacked 应用目录）；`buildManifest.files = steps.map(s => s.rel)`（安装后 rel）
+  - 开发形态（npm start + MINESWEEPER_SETUP=1）：源目录 = `app.getAppPath()`，白名单枚举
+    （预览语义，无重命名/前缀映射）
+  - 快捷方式/DisplayIcon 指向**安装副本 exe**：打包 = `<目标目录>\Minesweeper.exe`
+    （重命名后）；开发 = 当前 exe；工作目录 = 目标目录
+- **卸载项值（v3 变更）**：`DisplayName=扫雷 Minesweeper`、`DisplayVersion`、
+  `DisplayIcon=<安装副本 exe>`、`UninstallString="<setup 磁盘 exe>" --uninstall`、
+  `InstallLocation=<目标目录>`、`NoModify=1`、`NoRepair=1`、`EstimatedSize(KB)`
+  - setup 磁盘 exe = `process.env.PORTABLE_EXECUTABLE_FILE || path.join(dirname(process.execPath),
+    basename(process.execPath))`（portable 解压 exe ≠ 磁盘 exe，必须用环境变量）
+- **getStatus/卸载重定位**：新增 `queryRegistryInstallLocation()`；relocateManifestDir 传入
+  `registryInstallLocation`（v3 主重定位来源）
+- 卸载自删：游戏目录内无 setup 自身文件，一般无自锁；若游戏进程在运行（BUSY）→ 生成
+  `%TEMP%\minesweeper-uninstall-<ts>.bat`（`buildUninstallCleanupScript`）→ 分离启动 →
+  报告后 `app.exit()`
 
 ### electron/log.cjs
 - `createLogger({dir}) -> { info, warn, error, getLogPath() }`
-- 路径 `%LOCALAPPDATA%\Minesweeper\logs\minesweeper-YYYY-MM-DD.log`；按日轮转，启动清理 7 天前文件
-- 行格式 = `formatLogLine(level, module, message, ts)`（见 §5c）；appendFileSync，写失败静默降级 console
+- 默认路径 `%LOCALAPPDATA%\Minesweeper\logs\minesweeper-YYYY-MM-DD.log`（游戏侧）；
+  **setup 侧传入 `{ dir: <os.tmpdir()/MinesweeperSetup/logs> }`**（%TEMP% 自动清理，零痕迹）；
+  按日轮转，启动清理 7 天前文件
+- 行格式 = `formatLogLine(level, module, message, ts)`（见 §5c）；installer.js 未打包时
+  走内联兜底格式化器（格式逐字符一致）；appendFileSync，写失败静默降级 console
 - 记录点：启动路径解析、安装/卸载每步、注册表/快捷方式操作、全部错误归类、--uninstall 结果
 
-### package.json（要点）
+### package.json 与打包（v3）
 ```json
 {
   "name": "minesweeper",
   "productName": "Minesweeper",
-  "version": "1.0.0",
-  "description": "Electron 经典扫雷：防猜测模式 + 排行榜",
+  "version": "1.2.0",
+  "description": "Electron 经典扫雷：防猜测模式 + 排行榜 + 独立安装器",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "start": "electron .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dist": "electron-builder --win"
-  },
-  "build": {
-    "appId": "com.molotov.minesweeper",
-    "productName": "Minesweeper",
-    "files": ["electron/**", "src/**", "index.html", "package.json"],
-    "win": { "target": ["dir", "zip"] }     // v2：绿色版，移除 NSIS
+    "dist": "node scripts/build-dist.cjs"
   }
 }
 ```
+- `build` 字段删除；配置迁至 `scripts/setup-builder.yml`：
+  - `productName: MinesweeperSetup`；`files` = electron/{main,setup,preload-setup,
+    installer-runner,fs-utils,log}.cjs + src/core/installer.js + setup/** + package.json
+  - `extraResources: [{ from: '.build/game-app', to: 'game-app' }]`
+  - `win: { target: [portable], signAndEditExecutable: false,
+    artifactName: 'MinesweeperSetup-${version}-win.${ext}' }`
+- `scripts/build-dist.cjs` 流程：清理 dist/.build → staging 剥离版游戏到
+  `.build/game-app/`（index.html、styles/**、src/** 排除 src/core/installer.js、
+  electron/{main,preload,log}.cjs、package.json；复制后校验 package.json.main 与
+  无 installer 面文件）→ `npx electron-builder --config scripts/setup-builder.yml --win portable`
+  → 删除 dist/builder-debug.yml → 摘要输出
 - 安装命令需带 Electron 镜像备选：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install`（网络失败时启用）
 - vitest 环境：核心测试用 `// @vitest-environment node`，ui/render 测试用 `// @vitest-environment jsdom`（文件头注释声明）
 
@@ -768,17 +866,21 @@ contextBridge.exposeInMainWorld('minesweeperAPI', {
 | solve.retries.test.js | 重排 20 次耗尽（vi.mock 固定不可解布局） | ~2 |
 | game.test.js | 状态机、首点、防猜测三分支、计时/暂停、胜负事件（vi.mock solve 保证确定性） | ~25 |
 | leaderboard.test.js | 存取/排序/截断/损坏修复/降级 | ~15 |
-| ui.test.js（jsdom） | 控件回调、横幅、弹窗、计时刷新 | ~12 |
+| ui.test.js（jsdom） | 控件回调、横幅、弹窗、计时刷新（v3 不含安装 DOM） | ~12 |
 | render.test.js | 假 ctx 绘制断言 | ~6 |
 | **settings.test.js（v2）** | 默认值/持久化/损坏 JSON/越界回退/storage 抛错降级/拷贝语义 | ~12 |
 | **solve.advanced.test.js（v2）** | deduce 等价性与精确集合、高级成功路径、区域外雷固定、减雷移雷、边界与预算 | ~20 |
 | **game.advanced.test.js（v2）** | 默认 standard 回归、advanced 三分支+回退、参数透传、warning 数字 | ~10 |
-| **installer.test.js（v2）** | 路径规范化/清单往返/错误分类全表/卸载计划/重定位/目录建议/legacy/执行器 fake fsOps/脚本转义/日志格式 | ~25 |
-| **ui.sidebar.test.js（v2, jsdom）** | 汉堡开合/现有 id 回归/设置联动/面板/向导步骤/报告渲染/按钮文案 | ~15 |
+| **installer.test.js（v2→v3）** | 路径规范化/清单往返/错误分类全表/卸载计划/重定位（+InstallLocation 链）/目录建议/legacy/执行器 fake fsOps/脚本转义/日志格式 + **planInstall renames/relPrefix 映射** | ~30 |
+| **ui.sidebar.test.js（v2→v3, jsdom）** | 汉堡开合/现有 id 回归/设置联动/面板（v3 删除安装向导与报告用例） | ~10 |
+| **setup.ui.test.js（v3 新增, jsdom）** | 向导 5 步骤切换/卸载确认视图/进度条/报告分类渲染/legacy 提示/按钮接线/无 preload 不崩 | ~12 |
 
-验收标准：`npm test` 全绿（现有 111 + v2 新增 ~82）；随后 `npm start` 手动冒烟；
-冒烟脚本断言追加：`window.minesweeperAPI` 存在（preload）、`#sidebar-toggle` 存在、初始 body 无 sidebar-open；
-最后 `npm run dist` 出 win-unpacked + zip 绿色包。
+验收标准：`npm test` 全绿（v3 预计 ~230 用例）；随后 `npm start` 手动冒烟；
+冒烟脚本断言追加：`window.minesweeperAPI.app.getVersion` 为函数、`installer` 面**不存在**、
+`#installer-open` 不存在、`#sidebar-toggle` 存在、初始 body 无 sidebar-open；
+最后 `npm run dist` 出 `dist/MinesweeperSetup-1.2.0-win.exe`（dist 内唯一产物），
+`node scripts/installer-e2e.cjs` 四阶段端到端验收（静默安装/冒烟安装副本/移动+自愈+
+静默卸载/外来文件+GUI 卸载）。
 
 ## 9. 任务依赖图
 
@@ -794,8 +896,23 @@ v2:  T0b 文档链 + 全部新测试（主 agent）
      Wave B（并行）: T10 game（依赖 T9）┘
                      T11 electron 壳（依赖 T8）──▶ T12
      Wave D: T13 打包 + 全量验证 + README + AGENTS.md
+
+v3（安装剥离为独立 MinesweeperSetup）：
+     T14 文档链 + 任务文件 + progress（主 agent，W0）
+     Wave A: T15 setup UI（setup/ui.js + wizard.css + index.html，纯 jsdom）
+     Wave B: T16 installer.js 扩展（planInstall renames/relPrefix + relocateManifestDir
+             registryInstallLocation；测试先行）
+     Wave C: T17 electron setup（setup.cjs + preload-setup.cjs + runner 打包态安装适配
+             + main.cjs IS_SETUP 分派）── 依赖 T15+T16
+     Wave D: T18 游戏剥离（ui.js/main.js/preload.cjs/main.cjs/styles + 自愈
+             InstallLocation + ui.sidebar.test.js 删减 + smoke 深断言）
+     Wave E: T19 打包（build-dist.cjs + setup-builder.yml + package.json v1.2.0
+             + .gitignore；清理 dist/game）── 依赖 T17+T18
+     Wave F: T20 E2E 四阶段 + 全量验证 + README/AGENTS/progress 收尾 ── 依赖 T19
 ```
-- Wave A（并行）：T7、T8、T9
-- Wave B（并行）：T10（依赖 T9）、T11（依赖 T8）
-- Wave C：T12（依赖 T7、T10、T11）
-- Wave D：T13（打包 dir/zip、冒烟终验、手动验收清单、README、AGENTS.md 收尾）
+- v3 Wave A：T15（无依赖）
+- v3 Wave B：T16（无依赖）
+- v3 Wave C：T17（依赖 T15、T16）
+- v3 Wave D：T18（无依赖，可与 A/B/C 并行）
+- v3 Wave E：T19（依赖 T17、T18）
+- v3 Wave F：T20（依赖 T19；E2E 静默安装/自愈/卸载/GUI 卸载 + 手动验收清单）

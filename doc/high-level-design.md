@@ -4,33 +4,32 @@
 
 ## 1. 总体架构
 
-Electron 应用，经典三层：
+**v3 起为双应用架构**（一个仓库、一个 package.json）：游戏程序（剥离安装功能）与
+独立安装器 MinesweeperSetup（便携 exe，内含游戏文件）。主进程共用入口
+`electron/main.cjs`，顶部 IS_SETUP 检测（resources 下存在 `game-app` 目录或环境变量
+`MINESWEEPER_SETUP=1`）→ `require('./setup.cjs'); return` 分派到安装器侧。
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Electron 主进程  electron/                              │
-│   · main.cjs            窗口 + IPC 注册 + --uninstall    │
-│   · preload.cjs         contextBridge 最小 API 面        │
-│   · installer-runner.cjs 安装/卸载执行（薄胶水）         │
-│   · log.cjs             %LOCALAPPDATA% 日志（按日轮转）  │
-├─────────────────────────────────────────────────────────┤
-│  渲染进程  src/renderer/                                │
-│   · index.html + styles/main.css（经典扫雷风格+美化）    │
-│   · renderer/main.js（事件装配，薄层，含侧栏适配）       │
-│   · renderer/render.js（Canvas 绘制：3D 浮雕格子）       │
-│   · renderer/ui.js（顶栏/侧栏/面板/向导/弹窗 DOM）       │
-│   ─────────────────────────────────────────            │
-│  核心逻辑（纯 JS ESM，零 DOM 依赖，可被 Vitest 单测）    │
-│   · src/core/board.js     棋盘模型 + 布雷 + 翻开 + 标记  │
-│   · src/core/solve.js     可解性检测（deduce）+ 防猜测   │
-│                            重排（标准/高级局部重排）     │
-│   · src/core/game.js      游戏状态机 + 计时 + 防猜测调度 │
-│   · src/core/modes.js     模式预设 + 自定义约束          │
-│   · src/core/leaderboard.js  排行榜（localStorage）      │
-│   · src/core/settings.js  防猜测等设置持久化             │
-│   · src/core/installer.js 安装/卸载清单与错误分类（纯逻辑│
-│                            零 fs，注入 fsOps 执行）      │
-└─────────────────────────────────────────────────────────┘
+┌─ 游戏程序（安装产物：目标目录 resources/app/，unpacked）─────────────┐
+│  Electron 主进程  electron/                                          │
+│   · main.cjs            窗口 + IPC（仅 app:get-version）+ 单实例锁    │
+│                         + crash 日志 + 打包态 InstallLocation 自愈    │
+│   · preload.cjs         仅 app.getVersion                            │
+│   · log.cjs             %LOCALAPPDATA% 日志（按日轮转）              │
+│  渲染进程  src/renderer/（ui.js 无任何安装相关 DOM）                  │
+│  核心逻辑  src/core/（modes/board/solve/game/leaderboard/settings）   │
+└──────────────────────────────────────────────────────────────────────┘
+
+┌─ MinesweeperSetup（便携 exe，dist 唯一产物）─────────────────────────┐
+│  app.asar = setup 代码                                               │
+│   · electron/main.cjs（IS_SETUP 分派）+ setup.cjs（窗口/CLI/IPC）    │
+│   · preload-setup.cjs（app.getVersion + installer 6 方法）           │
+│   · installer-runner.cjs / fs-utils.cjs / log.cjs（薄胶水）          │
+│   · src/core/installer.js（安装/卸载纯逻辑）                          │
+│   · setup/（index.html + ui.js + wizard.css，向导/卸载界面）          │
+│  resources/game-app/ = extraResources 内嵌的剥离版游戏文件            │
+│  （安装时映射复制为 目标/resources/app/；卸载复用清单式删除）          │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 **原则**：所有可测试的逻辑（布雷、邻居计数、空区扩散、chord、可解性算法、
@@ -38,7 +37,8 @@ Electron 应用，经典三层：
 `src/core/*.js` 纯模块；渲染层只负责画与转发事件；主进程只做真实文件系统/
 注册表/快捷方式副作用（薄胶水）。这保证核心逻辑可在 Node 下用 Vitest 严格测试，
 无需 Electron/浏览器环境。安装/卸载决策（清单、比对、错误归类）与副作用执行分离，
-前者可注入式单测。
+前者可注入式单测。setup 的 userData 与日志全部 `setPath`/落盘到 %TEMP%（便携解压
+目录退出自动删除）——setup 自身零痕迹。
 
 ## 2. 模块职责
 
@@ -50,14 +50,17 @@ Electron 应用，经典三层：
 | `core/game.js` | 游戏生命周期状态机（ready/playing/paused/won/lost）、正向计时、防猜测调度（标准/高级+回退）、胜利/失败结果回调 | board, solve |
 | `core/leaderboard.js` | 按 (模式 × 防猜测) 分组的 top-10 榜单读写（localStorage）、排序、写入、查询 | 无 |
 | `core/settings.js` | 防猜测等用户设置持久化（localStorage，损坏/越界自动回退默认） | 无 |
-| `core/installer.js` | 安装清单构建/解析、卸载比对计划、错误分类（中文）、路径建议/校验/重定位、执行器（fsOps 注入） | 无 |
+| `core/installer.js` | 安装清单构建/解析、卸载比对计划、错误分类（中文）、路径建议/校验/重定位、执行器（fsOps 注入）；v3 扩展 planInstall renames/relPrefix 与 relocateManifestDir InstallLocation | 无 |
 | `renderer/render.js` | Canvas 经典 3D 风绘制（未开/翻开/旗/问号/数字/雷） | 无 |
-| `renderer/ui.js` | 顶栏（汉堡/状态/暂停重开）、左侧栏（等级/自定义/防猜测设置/排行榜/安装入口）、主页面板、安装向导、昵称输入、提醒横幅 | modes, leaderboard |
-| `renderer/main.js` | 装配：事件→core 调用→重绘；缩放手柄拖动；窗口 resize 适配（含侧栏展开扣除宽度）；IPC 调用 | 全部 |
-| `electron/main.cjs` | BrowserWindow、preload、IPC handler 注册、`--uninstall` 入口、单实例锁、崩溃日志 | installer |
-| `electron/preload.cjs` | contextBridge 暴露 `window.minesweeperAPI`（最小 API 面） | 无 |
-| `electron/installer-runner.cjs` | 真实 fs/注册表/快捷方式副作用执行（薄胶水，无业务决策） | installer |
-| `electron/log.cjs` | 按日轮转日志（%LOCALAPPDATA%\Minesweeper\logs\） | 无 |
+| `renderer/ui.js` | 顶栏（汉堡/状态/暂停重开）、左侧栏（等级/自定义/防猜测设置/排行榜）、主页面板、昵称输入、提醒横幅（v3 无任何安装相关 DOM） | modes, leaderboard |
+| `renderer/main.js` | 装配：事件→core 调用→重绘；缩放手柄拖动；窗口 resize 适配（含侧栏展开扣除宽度） | 全部 |
+| `electron/main.cjs` | 双应用分派入口（IS_SETUP → setup.cjs）；游戏侧：BrowserWindow、app:get-version IPC、单实例锁、崩溃日志、打包态 InstallLocation 自愈 | 无 |
+| `electron/preload.cjs` | contextBridge 暴露 `window.minesweeperAPI.app.getVersion`（游戏侧最小 API 面） | 无 |
+| `electron/setup.cjs` | 安装器主进程：窗口 + CLI（--uninstall/--install-dir/--no-*-shortcut）+ installer IPC 6 通道 + runner 装配；userData/日志重定向 %TEMP% | installer-runner |
+| `electron/preload-setup.cjs` | setup 侧 contextBridge：app.getVersion + installer 6 方法 + onProgress | 无 |
+| `electron/installer-runner.cjs` | 真实 fs/注册表/快捷方式副作用执行（薄胶水，无业务决策）；v3 打包态安装=运行时复制+exe 重命名+game-app→resources/app 映射 | installer |
+| `setup/ui.js` + `setup/index.html` + `setup/wizard.css` | 安装向导（welcome/dir/options/progress/report）+ 卸载确认界面 + legacy 清理；jsdom 可测 | 无 |
+| `electron/log.cjs` | 按日轮转日志（游戏：%LOCALAPPDATA% 默认；setup：dir 覆盖到 %TEMP%） | 无 |
 
 ## 3. 数据流
 
@@ -130,20 +133,34 @@ game 判定胜利 → 标准模式 → ui.js 弹昵称输入
 - 结构：`{ beginner: { antiGuess: {on:[…], off:[…]}, noAntiGuess: …}, … }`（详见 detailed-design）
 - 每组至多 10 条，按 timeMs 升序
 
-### 4.5 安装/卸载（应用内管理器）
-- 分发：免安装绿色版（`build.win.target: ["dir","zip"]`）
-- 安装 = 复制自身文件树（跳过清单文件）+ 写 `install-manifest.json` + 注册表卸载项 +
-  快捷方式（桌面/开始菜单按向导勾选）
-- 卸载 = 读清单（支持注册表失效重定位）→ 扫描磁盘树比对 → 清单式删除 +
-  清单外文件跳过提示 + 删除失败归类继续 → 清理注册表/快捷方式 → 自身占用文件用
-  临时 .bat 延迟清理
-- 决策（清单/比对/分类）在 `core/installer.js` 纯逻辑可单测；副作用在
+### 4.5 安装/卸载（v3 独立安装器 MinesweeperSetup）
+- 分发：dist 仅产出**单个便携 exe** `MinesweeperSetup-<version>-win.exe`
+  （electron-builder `portable` target，NSIS 压缩；每次运行解压到 %TEMP% 并退出自删）
+- 双击语义：未安装 → 安装向导；已安装 → 卸载确认界面；`--uninstall` 静默卸载；
+  `--install-dir <dir>` 静默安装（可附 `--no-desktop-shortcut`/`--no-startmenu-shortcut`）
+- 安装 = 复制自身完整运行时（**排除** `resources/app.asar` 与 `resources/game-app/`，
+  setup exe **重命名** `Minesweeper.exe`）+ 内嵌 `game-app` 文件**前缀映射**为
+  `resources/app/`（Electron unpacked 应用目录）+ 写 `install-manifest.json`（安装后 rel）
+  + 注册表卸载项（UninstallString=磁盘 setup exe `--uninstall`，经
+  `PORTABLE_EXECUTABLE_FILE` 取真实路径；`InstallLocation`=目标目录；DisplayIcon=安装副本
+  exe）+ 快捷方式（桌面/开始菜单按勾选，指向安装副本 exe）
+- 卸载 = 读清单（重定位链：自身目录 → 注册表 `InstallLocation` → `UninstallString` 目录）
+  → 扫描磁盘树比对 → 清单式删除 + 清单外文件跳过提示 + 删除失败归类继续 → 清理
+  注册表/快捷方式 → 占用文件用临时 .bat 延迟清理
+- **游戏剥离**：游戏程序无任何安装 UI/IPC/向导；仅打包态启动时自愈
+  `InstallLocation`（自身目录有清单且注册表值不符 → reg.exe 更新），保持
+  "移动目录后 setup 仍能卸载"的能力
+- **零痕迹**：setup 的 userData/日志全部落 %TEMP%（便携解压目录退出自动删除）；
+  不写自身注册表/AppData/快捷方式；删磁盘 exe 即无印记
+- 决策（清单/比对/分类/映射/重定位）在 `core/installer.js` 纯逻辑可单测；副作用在
   `installer-runner.cjs` 薄胶水执行；错误全中文分类（见 detailed-design §8）
 
 ## 5. 依赖与工具
 - 运行时：`electron`（唯一运行时依赖；注册表/快捷方式用系统自带 reg.exe / PowerShell）
-- 开发：`vitest`（测试）、`electron-builder`（打包绿色版 dir/zip）
+- 开发：`vitest`（测试）、`electron-builder`（打包便携 exe，target=portable）
 - 模块类型：ESM（`"type": "module"`）；Electron 主进程使用 CommonJS（.cjs）
+- 打包流水线：`scripts/build-dist.cjs`（清理 → staging 剥离版游戏到 `.build/game-app/`
+  → `electron-builder --config scripts/setup-builder.yml` → 产物校验）
 
 ## 6. 风险与备选
 | 风险 | 应对 |
@@ -154,5 +171,8 @@ game 判定胜利 → 标准模式 → ui.js 弹昵称输入
 | electron-builder 下载网络不稳定 | 打包作为独立任务，失败不阻塞功能交付；必要时换镜像 |
 | localStorage 在渲染进程差异 | 用标准 Web Storage API，Vitest 用 stub 模拟 |
 | 卸载误删/漏删 | 清单式删除 + 清单外文件保留提示 + 删除失败归类继续 + 卸载后汇总报告 |
-| 移动安装目录后崩溃 | 全部路径运行时从 process.execPath 解析、不缓存绝对路径；清单同目录；注册表失效自动重定位；异常中文报错 + 日志 |
+| portable 解压 exe 与磁盘 exe 路径分离 | UninstallString/DisplayIcon 用 `process.env.PORTABLE_EXECUTABLE_FILE`（磁盘真实路径），E2E 断言兜底 |
+| 移动安装目录后卸载定位 | 卸载重定位链含注册表 InstallLocation；游戏打包态启动自愈 InstallLocation；异常中文报错 + 日志 |
+| 卸载重定位依赖注册表 | 移动目录且从未运行游戏 → setup 无法定位（限制如实文档化；游戏运行一次即自愈） |
+| setup 运行时残留 | userData/日志重定向 %TEMP%；便携退出 RMDir 解压目录；异常退出仅留 %TEMP% 临时文件（可忽略） |
 | CSP 限制美化手段 | 系统字体栈 + 纯 CSS（阴影/渐变/transition），零外部资源 |

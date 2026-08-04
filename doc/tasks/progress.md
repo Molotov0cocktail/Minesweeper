@@ -3,7 +3,7 @@
 > 全流程唯一进度源。主 agent 负责维护；subagent 完成一个任务后更新。
 > 状态：⬜ 未开始 / 🟨 进行中 / ✅ 完成 / ❌ 阻塞
 
-## 依赖图（v1 + v2）
+## 依赖图（v1 + v2 + v3）
 ```
 v1:  T6 ───────────┐
      T1 ──▶ T2 ──▶ T3 ──▶ T5
@@ -15,6 +15,13 @@ v2:  T0b 文档链+测试（主 agent）
      Wave B（并行）: T10 game（依赖 T9）┘
                      T11 electron 壳（依赖 T8）──▶ T12
      Wave D: T13 打包 + 全量验证 + README + AGENTS.md
+v3:  T14 文档链+任务文件（主 agent，W0）
+     Wave A: T15 setup UI（无依赖）
+     Wave B: T16 installer.js 扩展（无依赖）
+     Wave C: T17 electron setup（依赖 T15+T16）
+     Wave D: T18 游戏剥离（无依赖，可与 A/B/C 并行）
+     Wave E: T19 打包（依赖 T17+T18）
+     Wave F: T20 E2E + 全量验证 + README/AGENTS（依赖 T19）
 ```
 
 ## 任务清单
@@ -36,6 +43,13 @@ v2:  T0b 文档链+测试（主 agent）
 | T11 | electron 主进程（preload/IPC/runner/log + 冒烟更新） | T8 | ⬜ | node --check + 冒烟 | v2 Wave B |
 | T12 | renderer 侧栏+面板+安装向导+美化 | T7+T10+T11 | ⬜ | `npx vitest run tests/ui.test.js tests/ui.sidebar.test.js` + 冒烟 | v2 Wave C |
 | T13 | 打包 dir/zip + 全量验证 + README + AGENTS.md | 全部 | ✅ | `npm test` 205/205 + 冒烟 + `npm run dist` + E2E 20/20 | v2 Wave D |
+| T14 | **v3 文档链 + 任务文件 t15~t20 + progress** | 无 | 🟨 | 文档一致性自查 | v3 W0（主 agent） |
+| T15 | setup UI（setup/ui.js + wizard.css + index.html） | 无 | ⬜ | `npx vitest run tests/setup.ui.test.js` | v3 Wave A |
+| T16 | installer.js 扩展（planInstall renames/relPrefix + relocateManifestDir InstallLocation） | 无 | ⬜ | `npx vitest run tests/installer.test.js` | v3 Wave B |
+| T17 | electron setup（setup.cjs + preload-setup.cjs + runner 适配 + IS_SETUP 分派） | T15+T16 | ⬜ | node --check + `npm test` | v3 Wave C |
+| T18 | 游戏剥离（ui/main/preload/main.cjs/styles/tests/smoke + 自愈 InstallLocation） | 无 | ⬜ | ui 测试 + 冒烟（noInstallerApi=true）+ `npm test` | v3 Wave D |
+| T19 | 打包（build-dist.cjs + setup-builder.yml + package.json v1.2.0 + 清理） | T17+T18 | ⬜ | `npm run dist` → dist 唯一产物 | v3 Wave E |
+| T20 | E2E 四阶段重写 + README/AGENTS/progress 收尾 + 全量验收 | T19 | ⬜ | `node scripts/installer-e2e.cjs` 20/20 + `npm test` 全绿 | v3 Wave F |
 
 ## 运行日志
 - 2026-08-03 需求确认完成（4 轮提问，12 项决策）。
@@ -77,3 +91,8 @@ v2:  T0b 文档链+测试（主 agent）
     安装完整运行时+注册表+快捷方式 ✓ / 移动目录后运行+静默卸载 ✓ / 延迟清理删除 ✓ /
     外来文件保留+根目录 BUSY 具体原因 ✓ / 旧残留检测 ✓
   - README、AGENTS.md 已按 v2 收尾更新（结构/接口速查/命令/测试约定）
+- 2026-08-04 **v3 需求确认完成**（1 轮提问，1 项决策）：安装从游戏剥离为独立便携 MinesweeperSetup exe
+  （用户选定 portable 单文件形态，v1.2.0；双击=安装/已装=卸载确认；setup 零痕迹）。
+- 2026-08-04 v3 文档链更新（T14）：proposal（FR9 去安装入口 / FR10 重写 + 决策记录 v3 行）、
+  high-level-design（双应用架构）、detailed-design（§5c 签名扩展、§6 删除契约、§6b setup UI、
+  §7 setup.cjs/CLI/preload 拆分/打包、§8 测试规格、§9 依赖图 v3）、任务文件 t15~t20、progress 更新。

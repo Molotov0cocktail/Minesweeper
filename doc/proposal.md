@@ -22,7 +22,7 @@
 
 ## 2. 目标用户 / 运行环境
 - 普通扫雷玩家，Windows 11（开发与打包目标平台为 win32/x64）
-- 通过 `npm start` 开发运行；通过 electron-builder 打包生成 Windows 安装包/exe
+- 通过 `npm start` 开发运行；通过 electron-builder 打包生成**独立便携安装器** `MinesweeperSetup-1.2.0-win.exe`（内含游戏文件，双击安装/卸载）
 
 ## 3. 输入 / 输出 / 外部依赖
 - **输入**：鼠标（左键/右键）、键盘（可选：R 重开、P 暂停）、行列/雷数数值输入、昵称输入
@@ -93,7 +93,7 @@
 
 ### FR9 左侧侧栏与页面布局
 - FR9.1 页面左侧提供**侧栏**（宽 240px，默认收起）：等级选择（初级/中级/高级）、
-  自定义行列/雷数、防猜测设置区、排行榜入口、安装/卸载入口
+  自定义行列/雷数、防猜测设置区、排行榜入口（v3 起**不再有**安装/卸载入口）
 - FR9.2 顶栏保留：左上角**汉堡按钮**（三条横线，点击展开/收起侧栏）、标题、
   剩余雷数、计时、暂停/重开按钮；防猜测关闭横幅保留
 - FR9.3 排行榜入口在侧栏；点击后在**主页展示**排名面板（6 组标签页：
@@ -101,24 +101,36 @@
 - FR9.4 侧栏展开/收起时棋盘自动缩放适配（可用宽度扣除侧栏宽度）
 - FR9.5 侧栏展开时覆盖或挤压按 FR9.4 处理；窄窗口（最小 480×360）下允许棋盘溢出（经典程序行为）
 
-### FR10 应用内安装 / 卸载管理器
-- FR10.1 **分发形态改为免安装绿色版**（electron-builder win target=dir/zip，移除 NSIS 安装包）
-- FR10.2 程序自身提供「安装」入口（侧栏）与**安装向导**：
-  选择安装地址（默认 `D:\Minesweeper`，无 D 盘回退其他非系统盘，兜底 `%USERPROFILE%\Minesweeper`，始终可手动修改）→
-  询问是否创建桌面快捷方式 / 开始菜单快捷方式（默认勾选）→ 确认后安装：
-  复制自身全部文件到目标目录 + 写入卸载注册表项 + 创建快捷方式
-- FR10.3 已安装状态下「安装」入口变为「卸载」：**清单式删除**——只删安装时记录的
-  清单内文件与自建目录；发现清单外文件/目录（用户后放入）→ 跳过并提示（为安全不删除）；
-  删除失败（占用/权限/不存在）→ 报**具体中文原因**、继续删除其余；结束后汇总报告
-- FR10.4 **移动安装目录不崩溃**：程序运行时所有路径从 `process.execPath` 动态解析、
-  不缓存绝对路径；清单文件与 exe 同目录；卸载时注册表/快捷方式失效自动重新定位；
-  各类异常给出中文报错提示并写入日志
-- FR10.5 日志文件写入 `%LOCALAPPDATA%\Minesweeper\logs\`（按日轮转，清理 7 天前），
-  记录启动/安装/卸载/错误归类；主进程未捕获异常也写入日志
-- FR10.6 卸载入口：应用内「卸载」按钮 + Windows 控制面板"卸载程序"
-  （注册表 UninstallString = `"<exe>" --uninstall` 静默执行）
-- FR10.7 **旧版残留检测**：检测旧 NSIS 安装目录（`%LOCALAPPDATA%\Programs\minesweeper`）、
-  旧快捷方式、旧注册表项；安装/卸载时提示并可清理
+### FR10 独立安装器 MinesweeperSetup（v3，替代 v2 应用内安装/卸载管理器）
+- FR10.1 **分发形态**：dist 仅产出单个便携 exe `MinesweeperSetup-1.2.0-win.exe`
+  （electron-builder `portable` target，NSIS 压缩，内含游戏文件）。**游戏程序本体不再内置
+  任何安装/卸载功能**（无入口、无向导、无 IPC），游戏被彻底剥离
+- FR10.2 **setup 双击语义**（唯一管理入口）：
+  - 未安装 → 安装向导：欢迎 → 选择安装地址（默认 `D:\Minesweeper`，无 D 盘回退其他
+    非系统盘，兜底 `%USERPROFILE%\Minesweeper`，始终可手动修改）→ 快捷方式选项
+    （桌面/开始菜单，默认勾选）→ 进度 → 报告
+  - 已安装 → 卸载确认界面（显示安装目录/版本，点击卸载 → 清单式卸载 → 报告）
+  - 命令行：`--uninstall` 静默卸载（控制面板 UninstallString 入口）；
+    `--install-dir <dir>` 静默安装（自动化/E2E）；`--no-desktop-shortcut` /
+    `--no-startmenu-shortcut` 关闭对应快捷方式
+- FR10.3 **安装动作**：复制自身完整运行时到目标目录（**排除** setup 自身的 app.asar 与
+  内嵌游戏目录 `resources/game-app/`；setup exe **重命名为 Minesweeper.exe**）+
+  内嵌游戏文件映射复制为目标 `resources/app/`（Electron unpacked 应用目录，安装副本
+  可独立运行）→ 写 `install-manifest.json`（相对路径清单，记录**安装后**路径）→
+  注册表卸载项（`UninstallString = "<setup exe>" --uninstall`、`InstallLocation`=目标目录、
+  DisplayIcon=安装副本 exe）→ 快捷方式指向安装副本 exe
+- FR10.4 **卸载**：清单式删除——重定位链（自身目录 → 注册表 `InstallLocation` →
+  `UninstallString` 目录 → 无）→ 只删清单内文件/自建目录；清单外内容跳过并提示；
+  删除失败（占用/权限/不存在）分类报中文原因继续；结束汇总报告 → 清理注册表/快捷方式
+  → 占用文件延迟 .bat 清理
+- FR10.5 **setup 零痕迹**：自身不写注册表、AppData、快捷方式；userData 与日志全部落在
+  %TEMP%（便携解压目录退出自动删除）；**删除磁盘 exe 即无任何印记**
+- FR10.6 **移动目录自愈**：游戏启动时（仅打包形态）检测注册表 `InstallLocation` 与自身
+  目录不符且自身目录存在清单 → 自动更新 `InstallLocation`（保持"移动安装目录后 setup
+  仍能定位卸载"的 v2 能力）
+- FR10.7 旧版残留检测（旧 NSIS 目录/快捷方式/注册表）保留在 setup：检测 + 一键清理
+- FR10.8 游戏程序剥离后日志仍写入 `%LOCALAPPDATA%\Minesweeper\logs\`（按日轮转，
+  清理 7 天前）；主进程未捕获异常写日志不闪退
 
 ### FR11 高级防猜测模式（局部重排）
 - FR11.1 侧栏可切换实现方式：**标准（整盘重排，默认）** / **高级（局部重排）**；
@@ -144,7 +156,7 @@
 - git 自动推送：每次任务/改动完成即 commit + push；若 push 因认证失败则暂停询问用户
 
 ## 6. 成功标准 / 验收检查
-- 全部 Vitest 测试通过（board / solve / game / leaderboard / renderer-ui）
+- 全部 Vitest 测试通过（board / solve / game / leaderboard / renderer-ui / installer / setup-ui）
 - `npm start` 可启动 Electron 窗口并完整可玩
 - 手动验收清单：
   1. 三种标准模式切换后棋盘尺寸正确
@@ -154,7 +166,9 @@
   5. 防猜测开启时：对可解局面无猜测；对高密度/20 次失败场景正确关闭并提醒
   6. 计时、暂停遮盖、重开行为正确
   7. 胜利输入昵称后上榜，刷新 localStorage 后仍在
-  8. 打包产物（exe/安装包）可生成
+  8. `npm run dist` 产出 `dist/MinesweeperSetup-1.2.0-win.exe`（dist 内仅此一个产物）；
+     双击该 exe 可安装/卸载；已安装游戏无任何安装相关 UI/IPC；
+     移动安装目录后运行游戏，再双击 setup 仍可卸载；删除 setup exe 后无残留印记
 - README.md 完整描述运行/测试/打包/功能/操作说明
 
 ## 7. 已确认决策记录（来自用户）
@@ -180,3 +194,10 @@
 | （v2）高级模式失败回退 | 回退标准整盘重排（标准也失败→关闭+横幅） |
 | （v2）侧栏划分 | 顶栏保留汉堡/标题/状态/暂停重开；侧栏：等级/自定义/防猜测/排行榜 |
 | （v2）排行榜形式 | 侧栏按钮 → 主页展示面板（非弹窗），并做界面美化 |
+| （v3）安装形态 | **游戏剥离**安装功能；独立 MinesweeperSetup 便携 exe（portable 单文件，用户选定），双击=安装向导/已装=卸载确认 |
+| （v3）产物命名与版本 | `dist/MinesweeperSetup-1.2.0-win.exe`；package.json 版本 1.0.0 → **1.2.0**（游戏与 setup 同版本） |
+| （v3）安装动作 | 复制自身运行时（排除 app.asar/game-app）+ 内嵌 `game-app` 映射为目标 `resources/app/`（unpacked）+ setup exe 重命名 Minesweeper.exe |
+| （v3）卸载入口 | setup 双击=卸载确认；注册表 UninstallString=setup exe `--uninstall`；安装写 InstallLocation；重定位链=自身目录→InstallLocation→UninstallString 目录 |
+| （v3）零痕迹 | setup 的 userData/日志全在 %TEMP%（便携解压目录退出自删）；不写自身注册表/AppData/快捷方式；删 exe 无印记 |
+| （v3）移动目录 | 游戏启动自愈 InstallLocation（仅打包态：自身目录有清单且与注册表不符 → 更新） |
+| （v3）静默通道 | `--uninstall` / `--install-dir <dir>`（+ `--no-desktop-shortcut` / `--no-startmenu-shortcut`）；E2E 经此与 CDP 验收 |
