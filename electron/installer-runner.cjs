@@ -87,12 +87,12 @@ function createRunner({ logger, installerMod, getWindow }) {
     return !r.error && r.status === 0;
   };
   /** 写入注册表卸载项（reg.exe add /f，逐值覆盖；首个失败 → REG_FAIL 停止） */
-  const writeRegistryUninstallEntry = ({ appVersion, installDir, estimatedSizeKB }) => {
+  const writeRegistryUninstallEntry = ({ appVersion, installDir, estimatedSizeKB, uninstallExe }) => {
     const values = [
       ['DisplayName', 'REG_SZ', '扫雷 Minesweeper'],
       ['DisplayVersion', 'REG_SZ', appVersion],
-      ['DisplayIcon', 'REG_SZ', `"${process.execPath}"`],
-      ['UninstallString', 'REG_SZ', `"${process.execPath}" --uninstall`],
+      ['DisplayIcon', 'REG_SZ', `"${uninstallExe}"`],
+      ['UninstallString', 'REG_SZ', `"${uninstallExe}" --uninstall`],
       ['InstallLocation', 'REG_SZ', installDir],
       ['NoModify', 'REG_DWORD', '1'],
       ['NoRepair', 'REG_DWORD', '1'],
@@ -186,10 +186,14 @@ function createRunner({ logger, installerMod, getWindow }) {
       return { ok: false, ...reportBase, errors: [e] };
     }
 
-    // 枚举源树（镜像 build.files：index.html/styles/src/electron/package.json）
-    const sourceDir = app.getAppPath();
-    const files = enumSourceTree(sourceDir);
-    log.info('installer', `源树枚举完成：${files.length} 个文件（源：${sourceDir}）`);
+    // 枚举源树：
+    // - 打包形态（绿色版）：完整复制自身运行时目录（exe/dll/resources/locales…），排除清单文件，
+    //   安装副本可独立运行（修复"安装后移动目录崩溃"的关键：副本自带全部运行时）
+    // - 开发形态（npm start）：镜像 build.files 白名单（源码树无运行时，仅预览语义）
+    const isPackaged = app.isPackaged;
+    const sourceDir = isPackaged ? path.dirname(process.execPath) : app.getAppPath();
+    const files = enumSourceTree(sourceDir, { excludes: [MANIFEST_FILE], whitelist: !isPackaged });
+    log.info('installer', `源树枚举完成：${files.length} 个文件（源：${sourceDir}，${isPackaged ? '打包完整运行时' : '开发白名单'}）`);
     if (files.length === 0) {
       const e = { code: 'OP_ERROR', message: '操作失败：源目录中没有可安装的文件', path: sourceDir };
       log.error('installer', `${e.code}：${e.message}`);
@@ -243,9 +247,16 @@ function createRunner({ logger, installerMod, getWindow }) {
     }
     const estimatedSizeKB = Math.max(1, Math.round(totalBytes / 1024));
 
+    // 安装副本的可执行入口：
+    // - 打包形态：<目标目录>\<exe 名>（副本自带运行时，可独立运行；快捷方式/卸载入口均指向它）
+    // - 开发形态：当前 exe（源码预览语义，无独立运行时）
+    const installedExe = isPackaged ? path.join(targetDir, path.basename(process.execPath)) : process.execPath;
+
     // 注册表卸载项
     sendProgress({ phase: 'registry', done: 0, total: 0, message: '写入注册表卸载项' });
-    const regErr = writeRegistryUninstallEntry({ appVersion: app.getVersion(), installDir: targetDir, estimatedSizeKB });
+    const regErr = writeRegistryUninstallEntry({
+      appVersion: app.getVersion(), installDir: targetDir, estimatedSizeKB, uninstallExe: installedExe,
+    });
     if (regErr) {
       errors.push({ ...regErr, path: UNINSTALL_KEY });
       log.error('installer', `${regErr.code}：${regErr.message}`);
@@ -253,10 +264,13 @@ function createRunner({ logger, installerMod, getWindow }) {
       log.info('installer', `注册表卸载项已写入：${UNINSTALL_KEY}`);
     }
 
-    // 快捷方式（PowerShell WScript.Shell；目标 = 当前 exe + 安装目录参数）
+    // 快捷方式（PowerShell WScript.Shell；目标 = 安装副本 exe）
     const createdShortcuts = [];
     sendProgress({ phase: 'shortcut', done: 0, total: 0, message: '创建快捷方式' });
-    const shortcutSpec = { targetExe: process.execPath, arguments: targetDir, workingDir: path.dirname(process.execPath), description: '扫雷 Minesweeper', icon: `${process.execPath},0` };
+    const shortcutSpec = {
+      targetExe: installedExe, workingDir: targetDir,
+      description: '扫雷 Minesweeper', icon: `${installedExe},0`,
+    };
     if (opts.desktopShortcut !== false) {
       const lnk = desktopLnk();
       const e = createShortcut(lnk, shortcutSpec);

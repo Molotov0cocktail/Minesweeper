@@ -215,3 +215,504 @@ button:disabled {
 .hidden {
   display: none;
 }
+
+/* ============================================================
+   v2（T12）：顶栏 / 左侧栏 / 主页面板 / 安装向导 / 界面美化
+   - 保持经典扫雷灰底 + 3D 浮雕基调，零外部资源（CSP 约束内）
+   ============================================================ */
+
+/* ---------- 应用布局（v2） ---------- */
+#app {
+  padding: 0;
+  align-items: stretch;
+}
+
+.ms-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  transition: margin-left 0.18s ease;
+}
+
+body.sidebar-open .ms-main {
+  margin-left: 248px;
+}
+
+/* ---------- 顶栏 ---------- */
+.ms-topbar {
+  position: relative;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 10px;
+  background: var(--face);
+  border-bottom: 1px solid var(--window-border);
+  box-shadow:
+    inset 0 -1px 0 var(--face-dark),
+    inset 0 1px 0 var(--face-light);
+}
+
+.ms-hamburger {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ms-hamburger-line,
+.ms-hamburger-line::before,
+.ms-hamburger-line::after {
+  content: '';
+  display: block;
+  position: absolute;
+  left: 7px;
+  right: 7px;
+  height: 2px;
+  background: #000;
+}
+
+.ms-hamburger-line {
+  top: 13px;
+}
+
+.ms-hamburger-line::before {
+  top: -5px;
+}
+
+.ms-hamburger-line::after {
+  top: 5px;
+}
+
+.ms-topbar-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #404040;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.ms-topbar-status {
+  display: flex;
+  gap: 16px;
+  margin-left: auto;
+}
+
+.ms-status b {
+  font-family: "Consolas", "Courier New", monospace;
+}
+
+.ms-topbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---------- 左侧栏 ---------- */
+#sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 240px;
+  padding: 10px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--face);
+  border-right: 1px solid var(--window-border);
+  box-shadow:
+    inset -1px 0 0 var(--face-dark),
+    inset 2px 0 0 var(--face-light),
+    4px 0 14px rgba(0, 0, 0, 0.3);
+  transform: translateX(-102%);
+  transition: transform 0.18s ease;
+  z-index: 80;
+}
+
+body.sidebar-open #sidebar {
+  transform: translateX(0);
+}
+
+.ms-side-section {
+  padding: 8px;
+  border: 1px solid var(--window-border);
+  box-shadow:
+    inset -1px -1px 0 var(--face-dark),
+    inset -2px -2px 0 var(--face-black),
+    inset 1px 1px 0 var(--face-light);
+}
+
+.ms-side-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #404040;
+}
+
+.ms-mode-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-mode {
+  width: 100%;
+  text-align: left;
+}
+
+.ms-custom-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.ms-field input,
+.ms-field select {
+  width: 96px;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 2px 4px;
+  color: #000;
+  background: #fff;
+  border: 1px solid var(--face-dark);
+  box-shadow: inset 1px 1px 0 var(--face-black);
+}
+
+.ms-field input:disabled {
+  background: var(--face);
+  color: var(--face-dark);
+  box-shadow: none;
+}
+
+.ms-input {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 3px 6px;
+  color: #000;
+  background: #fff;
+  border: 1px solid var(--face-dark);
+  box-shadow: inset 1px 1px 0 var(--face-black);
+}
+
+.ms-error {
+  min-height: 15px;
+  font-size: 12px;
+  color: #c00;
+}
+
+.ms-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ms-antiguess {
+  font-size: 12px;
+  color: #404040;
+}
+
+.ms-ag-settings {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #404040;
+  line-height: 1.5;
+}
+
+.ms-side-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+}
+
+/* ---------- 强调按钮 ---------- */
+.ms-btn {
+  width: 100%;
+  transition: filter 0.12s ease;
+}
+
+.ms-btn-primary {
+  background: #000080;
+  border-color: #000080;
+  color: #fff;
+}
+
+.ms-btn-primary:hover:not(:disabled) {
+  background: #1a1aff;
+}
+
+.ms-btn-danger {
+  background: #800000;
+  border-color: #800000;
+  color: #fff;
+}
+
+.ms-btn-danger:hover:not(:disabled) {
+  background: #cc0000;
+}
+
+/* ---------- 焦点可见性（键盘可达性美化） ---------- */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid #000080;
+  outline-offset: 1px;
+}
+
+button:not(:disabled):hover {
+  filter: brightness(1.06);
+}
+
+/* ---------- 排行榜主页面板 ---------- */
+.ms-panel {
+  position: fixed;
+  right: 24px;
+  top: 72px;
+  width: min(430px, 92vw);
+  max-height: 74vh;
+  overflow: auto;
+  padding: 14px;
+  background: var(--face);
+  border: 2px solid var(--window-border);
+  box-shadow:
+    inset -2px -2px 0 var(--face-dark),
+    inset -4px -4px 0 var(--face-black),
+    inset 2px 2px 0 var(--face-light),
+    6px 6px 18px rgba(0, 0, 0, 0.35);
+  z-index: 70;
+  animation: ms-panel-in 0.14s ease;
+}
+
+@keyframes ms-panel-in {
+  from {
+    transform: translateY(-6px);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.ms-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.ms-panel-title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.ms-panel-close {
+  padding: 0 10px;
+}
+
+.ms-lb-hint {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #808000;
+}
+
+.ms-lb-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.ms-lb-tab {
+  font-size: 12px;
+  padding: 2px 8px;
+  transition: background 0.1s ease;
+}
+
+.ms-lb-tab.active {
+  background: #000080;
+  border-color: #000080;
+  color: #fff;
+}
+
+.ms-lb-body {
+  min-height: 60px;
+}
+
+.ms-lb-title {
+  margin-bottom: 6px;
+  font-weight: bold;
+}
+
+.ms-lb-empty {
+  text-align: center;
+  color: #404040;
+}
+
+.ms-lb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ms-lb-table th,
+.ms-lb-table td {
+  padding: 3px 8px;
+  text-align: left;
+  border: 1px solid var(--face-dark);
+}
+
+.ms-lb-table th {
+  background: #d6d6d6;
+}
+
+/* ---------- 安装向导 ---------- */
+.ms-wizard {
+  width: min(460px, 88vw);
+}
+
+.ms-wiz-page {
+  display: none;
+}
+
+#installer-step[data-step="welcome"] [data-page="welcome"],
+#installer-step[data-step="dir"] [data-page="dir"],
+#installer-step[data-step="options"] [data-page="options"],
+#installer-step[data-step="progress"] [data-page="progress"],
+#installer-step[data-step="report"] [data-page="report"] {
+  display: block;
+}
+
+/* 向导按钮按步骤显隐 */
+#installer-step .modal-actions button {
+  display: none;
+}
+
+#installer-step[data-step="welcome"] #install-next,
+#installer-step[data-step="welcome"] #install-cancel,
+#installer-step[data-step="dir"] #install-back,
+#installer-step[data-step="dir"] #install-next,
+#installer-step[data-step="dir"] #install-cancel,
+#installer-step[data-step="options"] #install-back,
+#installer-step[data-step="options"] #install-confirm,
+#installer-step[data-step="options"] #install-cancel,
+#installer-step[data-step="report"] #install-close {
+  display: inline-block;
+}
+
+#installer-step[data-step="options"] #install-confirm {
+  background: #000080;
+  border-color: #000080;
+  color: #fff;
+}
+
+.ms-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+
+/* 进度条 */
+.ms-progress-track {
+  height: 18px;
+  padding: 2px;
+  background: #fff;
+  border: 1px solid var(--window-border);
+  box-shadow: inset 1px 1px 0 var(--face-black);
+}
+
+.ms-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(180deg, #4c4cff, #000080);
+  transition: width 0.2s ease;
+}
+
+.ms-progress-text {
+  margin: 6px 0 0;
+  text-align: center;
+}
+
+/* 报告条目（按 code 分类着色） */
+.ms-report {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.ms-report li {
+  padding: 4px 8px;
+  word-break: break-all;
+}
+
+.ms-report-summary {
+  margin: 0 0 4px;
+  font-weight: bold;
+}
+
+.report-error {
+  color: #c00;
+  background: #fff0f0;
+  border: 1px solid #f0b0b0;
+}
+
+.report-warn {
+  color: #805000;
+  background: #fff8e0;
+  border: 1px solid #e0c880;
+}
+
+.report-ok {
+  color: #006000;
+  background: #f0fff0;
+  border: 1px solid #a0d8a0;
+}
+
+/* 旧版残留清理提示区 */
+.ms-legacy-clean {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #a00;
+  background: #fff0f0;
+  border: 1px solid #f0b0b0;
+}
+
+.ms-legacy-clean button {
+  margin-left: auto;
+  flex: none;
+}

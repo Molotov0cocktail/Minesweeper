@@ -710,8 +710,14 @@ contextBridge.exposeInMainWorld('minesweeperAPI', {
 - 真实副作用执行者：`fs`（readdir/stat/copyFile/unlink/rmdir）、
   `reg.exe add|delete|query`（超时 15s，非零退出 → REG_FAIL）、
   `powershell -NoProfile -ExecutionPolicy Bypass`（WScript.Shell 创建/删除 .lnk，→ SHORTCUT_FAIL）
-- 卸载项值：`DisplayName=扫雷 Minesweeper`、`DisplayVersion`、`DisplayIcon=<exe>`、
-  `UninstallString="<exe>" --uninstall`、`InstallLocation`、`NoModify=1`、`NoRepair=1`、`EstimatedSize(KB)`
+- **安装源语义（v2 修正）**：
+  - 打包形态（`app.isPackaged`）：源目录 = `dirname(process.execPath)`（完整运行时：
+    exe/dll/resources/locales…），**枚举整目录**（排除 install-manifest.json）→ 安装副本可独立运行
+  - 开发形态：源目录 = `app.getAppPath()`，按 build.files 白名单枚举（源码树无运行时，预览语义）
+  - 快捷方式/注册表卸载项一律指向**安装副本 exe**（打包：`<目标目录>\<exe 名>`；开发：当前 exe），
+    工作目录 = 目标目录
+- 卸载项值：`DisplayName=扫雷 Minesweeper`、`DisplayVersion`、`DisplayIcon=<安装副本 exe>`、
+  `UninstallString="<安装副本 exe>" --uninstall`、`InstallLocation`、`NoModify=1`、`NoRepair=1`、`EstimatedSize(KB)`
 - 卸载自删：自身 exe/资源因占用删除失败 → 生成 `%TEMP%\minesweeper-uninstall-<ts>.bat`
   （`buildUninstallCleanupScript`）→ `start "" cmd /c <bat>` 分离启动 → 报告后 `app.quit()`
 

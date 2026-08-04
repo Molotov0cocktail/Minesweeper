@@ -10,10 +10,14 @@ const SOURCE_ALLOW_TOP = new Set(['index.html', 'styles', 'src', 'electron', 'pa
 
 /**
  * 枚举源树（安装用）：返回相对路径数组（'\\' 分隔、无前导 '\\'，含子目录文件）。
- * 顶层按 SOURCE_ALLOW_TOP 白名单过滤；目录递归；符号链接与异常目录跳过。
+ * - whitelist=true（开发/源码形态）：顶层按 SOURCE_ALLOW_TOP 白名单过滤（源码树无运行时）。
+ * - whitelist=false（打包形态）：枚举整个目录（完整运行时：exe/dll/resources/locales 等）。
+ * excludes：需要排除的相对路径（如 install-manifest.json）。
+ * 目录递归；符号链接与异常目录跳过。
  */
-function enumSourceTree(root) {
+function enumSourceTree(root, { excludes = [], whitelist = true } = {}) {
   const out = [];
+  const skip = new Set(excludes);
   const walk = (cur) => {
     let entries;
     try {
@@ -23,23 +27,29 @@ function enumSourceTree(root) {
     }
     for (const e of entries) {
       const full = path.join(cur, e.name);
+      const rel = path.relative(root, full).split(path.sep).join('\\');
+      if (skip.has(rel)) continue;
       if (e.isDirectory()) {
         walk(full);
       } else if (e.isFile()) {
-        out.push(path.relative(root, full).split(path.sep).join('\\'));
+        out.push(rel);
       }
     }
   };
-  for (const top of SOURCE_ALLOW_TOP) {
-    const full = path.join(root, top);
-    let st;
-    try {
-      st = fs.statSync(full);
-    } catch {
-      continue;
+  if (whitelist) {
+    for (const top of SOURCE_ALLOW_TOP) {
+      const full = path.join(root, top);
+      let st;
+      try {
+        st = fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (st.isDirectory()) walk(full);
+      else if (st.isFile()) out.push(top);
     }
-    if (st.isDirectory()) walk(full);
-    else if (st.isFile()) out.push(top);
+  } else {
+    walk(root);
   }
   return out;
 }
