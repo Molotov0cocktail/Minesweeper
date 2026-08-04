@@ -59,9 +59,13 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
    **git commit + push**（每次改动后都推送，仓库：`https://gitee.com/Molotov0coaktail/minesweeper`）。
 5. **集成验证**：全量 `npm test` → `scripts/smoke.cjs` 冒烟（确认页面加载/无 JS 错误/无渲染崩溃）→
    `npm run dist` 重新打包（**每次作业必做，见 §3 规则**）。
-6. **⚠️ 大作业收尾必须更新 AGENTS.md**：每完成一次大的作业（新功能、重构、接口变更、
-   结构/命令/流程变化等）后，必须回头刷新本文件的相应章节——接口速查（§5）、项目结构（§4）、
-   常用命令（§6）、测试约定（§7）——保证新会话看到的文档与现实代码一致。
+6. **重大版本更新自动发布 Gitee Release**（version 提升时，见 §3 发布闭环，2026-08-04 起）：
+   `git tag v<version>` 推送 → `node scripts/publish-release.cjs`（幂等）→ 公开 API 验证
+   Release 与附件 → 发布后同步 AGENTS.md/README 中的版本与发布信息。
+7. **⚠️ 自动更新 AGENTS.md（每作业必做）**：每完成一次作业（新功能、修复、重构、接口变更、
+   结构/命令/流程变化、版本发布等）后，**自动**回头刷新本文件的相应章节——接口速查（§5）、
+   项目结构（§4）、常用命令（§6）、测试约定（§7）、发布流程（§2 第 6 步/§3）——
+   保证新会话看到的文档与现实代码一致，无需用户提醒。
    检查方法：`grep -n "^export" src/core/*.js src/renderer/*.js` 与实际签名对比。
 
 ## 3. 规则（护栏）
@@ -371,9 +375,12 @@ npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperS
 # 端到端安装/卸载验收：node scripts/installer-e2e.cjs（先 npm run dist；
 # 四阶段：静默安装→冒烟安装副本+移动+自愈+静默卸载→外来文件+GUI 卸载→清理；
 # 会在 D:\MinesweeperE2E 真实安装/移动/卸载，用后清理；当前 32/32 通过）
-# 发布 Gitee Release（重大版本更新后必做）：git tag v<version> && git push origin v<version>
+# 发布 Gitee Release（重大版本更新后必做，§2 第 6 步）：git tag v<version> && git push origin v<version>
 #   && node scripts/publish-release.cjs（幂等：tag 已发布则拒绝覆盖；产物校验；
 #   凭据 GITEE_TOKEN 环境变量或 .local/gitee-token，更新要求见 §3）
+#   发布后验证（公开 API，无需令牌）：
+#   curl https://gitee.com/api/v5/repos/Molotov0coaktail/minesweeper/releases
+#   首个 Release：v1.2.0（2026-08-04，含排行榜修复；发布流程经实测稳定，含 3 个踩坑修复）
 ```
 
 ## 7. 测试约定

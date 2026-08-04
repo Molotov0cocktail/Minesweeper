@@ -135,3 +135,6 @@ v3:  T14 文档链+任务文件（主 agent，W0）
     scripts/publish-release.cjs（幂等：tag 已存在拒绝覆盖；凭据 GITEE_TOKEN 或
     .local/gitee-token，严禁入库）；AGENTS.md §3 新增「发布闭环（重大版本必发 Release）」
     与「令牌管理/更新要求」，§4/§6 同步。
+  - 用户明示「以后自动更新」：AGENTS.md §2 新增第 6 步「重大版本更新自动发布 Gitee Release」、
+    第 7 步「自动更新 AGENTS.md（每作业必做，无需用户提醒）」；§6 补充发布后公开 API 验证
+    命令与首个 Release 记录。
