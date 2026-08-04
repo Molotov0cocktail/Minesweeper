@@ -1,7 +1,8 @@
 // src/renderer/main.js
 // 装配层：创建 game、绑定画布鼠标交互、缩放手柄、窗口自适应、UI 与 game 事件联动、
 // v2（T12）：侧栏开合适配（fitToWindow 扣侧栏宽）、防猜测设置持久化（settings，依赖 T7）、
-//           排行榜面板、安装/卸载向导 IPC 接线（依赖 T11，可选链降级）。
+//           排行榜面板。
+// v3（T18）：安装/卸载向导已剥离（独立 MinesweeperSetup），本文件无 installer IPC 接线。
 
 import { createGame, STATE } from '../core/game.js';
 import { MODES, validateCustom } from '../core/modes.js';
@@ -25,7 +26,6 @@ const settings = createSettings();
 let game = null;
 let cellSize = 24;
 let pendingScore = null; // 待提交的胜利成绩
-let installProgressUnsub = null; // 进度事件退订函数
 
 // ---------- 缩放手柄拖拽状态 ----------
 let dragging = false;
@@ -111,144 +111,6 @@ function onLose() {
   render();
 }
 
-// ---------- 安装 / 卸载 IPC 辅助 ----------
-function installerAPI() {
-  return (window.minesweeperAPI && window.minesweeperAPI.installer) || null;
-}
-
-function subscribeProgress() {
-  unsubscribeProgress();
-  const api = installerAPI();
-  if (!api || typeof api.onProgress !== 'function') return;
-  installProgressUnsub = api.onProgress((p) => {
-    if (p && typeof p.done === 'number' && typeof p.total === 'number') {
-      ui.setInstallerProgress({ done: p.done, total: p.total, message: p.message || '' });
-    }
-  });
-}
-
-function unsubscribeProgress() {
-  if (installProgressUnsub) {
-    installProgressUnsub();
-    installProgressUnsub = null;
-  }
-}
-
-function wizardStep() {
-  const el = document.getElementById('installer-step');
-  return el ? el.dataset.step : null;
-}
-
-function openInstallerFlow() {
-  const api = installerAPI();
-  if (!api) {
-    // 无 preload 环境（浏览器直接打开）：优雅降级提示
-    ui.showBanner('当前环境不支持安装功能');
-    return;
-  }
-  Promise.resolve(api.getStatus())
-    .then((status) => {
-      if (status && status.installed) {
-        // 已安装 → 文案切换为“卸载”，二次确认后执行卸载
-        ui.setInstallerLabel('卸载');
-        const dir = status.installDir || '';
-        if (window.confirm(`游戏已安装到 ${dir}，确定卸载吗？`)) {
-          runUninstallFlow();
-        }
-      } else {
-        ui.setInstallerLabel('安装到本机');
-        ui.showInstallerWizard('welcome', { legacy: status && status.legacy });
-      }
-    })
-    .catch(() => ui.showBanner('当前环境不支持安装功能'));
-}
-
-function runInstallFlow(opts) {
-  const api = installerAPI();
-  if (!api) {
-    ui.showBanner('当前环境不支持安装功能');
-    return;
-  }
-  const dir = (opts && opts.dir ? String(opts.dir) : '').trim();
-  if (!dir) {
-    ui.showInstallerWizard('dir', { error: '请填写安装目录' });
-    return;
-  }
-  ui.showInstallerWizard('progress', {});
-  subscribeProgress();
-  Promise.resolve(
-    api.install({
-      dir,
-      desktopShortcut: Boolean(opts && opts.desktopShortcut),
-      startMenuShortcut: Boolean(opts && opts.startMenuShortcut),
-    }),
-  )
-    .then((result) => {
-      ui.showInstallerWizard('report', {});
-      ui.showInstallerReport(result || { ok: false, errors: [] });
-      if (result && result.ok) ui.setInstallerLabel('卸载');
-    })
-    .catch((err) => {
-      ui.showInstallerWizard('report', {});
-      ui.showInstallerReport({
-        ok: false,
-        errors: [{ code: 'IPC_FAIL', message: String((err && err.message) || err) }],
-      });
-    })
-    .then(unsubscribeProgress);
-}
-
-function runUninstallFlow() {
-  const api = installerAPI();
-  if (!api) return;
-  ui.showInstallerWizard('progress', {});
-  subscribeProgress();
-  Promise.resolve(api.uninstall())
-    .then((result) => {
-      ui.showInstallerWizard('report', {});
-      ui.showInstallerReport(result || { ok: false, errors: [] });
-      if (result && result.ok) ui.setInstallerLabel('安装到本机');
-    })
-    .catch((err) => {
-      ui.showInstallerWizard('report', {});
-      ui.showInstallerReport({
-        ok: false,
-        errors: [{ code: 'IPC_FAIL', message: String((err && err.message) || err) }],
-      });
-    })
-    .then(unsubscribeProgress);
-}
-
-function runCleanLegacyFlow() {
-  const api = installerAPI();
-  if (!api) return;
-  ui.showInstallerWizard('progress', {});
-  subscribeProgress();
-  Promise.resolve(api.cleanLegacy())
-    .then((result) => {
-      ui.showInstallerWizard('report', {});
-      ui.showInstallerReport(result || { ok: false, errors: [] });
-    })
-    .catch((err) => {
-      ui.showInstallerWizard('report', {});
-      ui.showInstallerReport({
-        ok: false,
-        errors: [{ code: 'IPC_FAIL', message: String((err && err.message) || err) }],
-      });
-    })
-    .then(unsubscribeProgress);
-}
-
-function suggestInstallDir() {
-  const api = installerAPI();
-  if (!api || typeof api.suggestDir !== 'function') return;
-  Promise.resolve(api.suggestDir())
-    .then((dir) => {
-      if (typeof dir === 'string' && dir) ui.showInstallerWizard('dir', { dir });
-    })
-    .catch(() => {});
-}
-
 // ---------- 装配 actions ----------
 const actions = {
   selectMode(mode) {
@@ -317,46 +179,6 @@ const actions = {
   // ---------- v2：排行榜面板 ----------
   openLeaderboard() {
     ui.showLeaderboard();
-  },
-  // ---------- v2：安装 / 卸载 ----------
-  openInstaller() {
-    openInstallerFlow();
-  },
-  wizardNext() {
-    const step = wizardStep();
-    if (step === 'welcome') {
-      const api = installerAPI();
-      if (api && typeof api.suggestDir === 'function') {
-        Promise.resolve(api.suggestDir())
-          .then((dir) => ui.showInstallerWizard('dir', { dir: typeof dir === 'string' ? dir : '' }))
-          .catch(() => ui.showInstallerWizard('dir', {}));
-      } else {
-        ui.showInstallerWizard('dir', {});
-      }
-    } else if (step === 'dir') {
-      ui.showInstallerWizard('options', {});
-    }
-  },
-  wizardBack() {
-    const step = wizardStep();
-    if (step === 'dir') ui.showInstallerWizard('welcome', {});
-    else if (step === 'options') ui.showInstallerWizard('dir', {});
-  },
-  wizardCancel() {
-    // 向导隐藏由 ui.js 负责（cancel/close 按钮）；此处清理进度订阅等
-    unsubscribeProgress();
-  },
-  suggestDir() {
-    suggestInstallDir();
-  },
-  runInstall(opts) {
-    runInstallFlow(opts);
-  },
-  runUninstall() {
-    runUninstallFlow();
-  },
-  runCleanLegacy() {
-    runCleanLegacyFlow();
   },
 };
 

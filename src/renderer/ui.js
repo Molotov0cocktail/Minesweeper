@@ -1,8 +1,8 @@
 // src/renderer/ui.js
 // DOM 层：在 host 内程序化生成全部控件，返回状态刷新 API（可 jsdom 测试，零依赖）。
 // 界面文案全部中文、经典扫雷风。
-// v2（T12）：顶栏（汉堡/标题/状态/暂停重开）+ 左侧栏（等级/自定义/防猜测设置/排行榜/安装卸载）
-//          + 排行榜主页面板 + 安装向导（见 doc/detailed-design.md §6）。
+// v3（T18）：顶栏（汉堡/标题/状态/暂停重开）+ 左侧栏（等级/自定义/防猜测设置/排行榜）
+//          + 排行榜主页面板（安装/卸载已剥离至独立 MinesweeperSetup，见 doc/detailed-design.md §6）。
 // 注：v2 新增 actions 一律可选链调用（actions.toggleSidebar?.() 等），
 //     保证既有 ui.test.js 的 deps（无这些 action）下不抛错。
 
@@ -20,25 +20,15 @@ export function formatTime(ms) {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-// 报告条目按 code 分类：NOT_FOUND（已跳过）视为警告，其余视为错误
-const WARN_CODES = new Set(['NOT_FOUND']);
-
-function classifyReport(code) {
-  return WARN_CODES.has(code) ? 'report-warn' : 'report-error';
-}
-
 /**
  * 创建 UI。deps = { leaderboard, getState?, actions }。
  * actions（v2 新增均为可选链调用）：selectMode, applyCustom, toggleAntiGuess, pause, resume,
  *   restart, submitNickname, toggleSidebar, setAntiGuessMethod, setMaxAttempts,
- *   setMaxRegionAttempts, openLeaderboard, openInstaller, wizardNext, wizardBack,
- *   wizardCancel, suggestDir, runInstall, runUninstall, runCleanLegacy
+ *   setMaxRegionAttempts, openLeaderboard
  * @returns {{
  *   setMineCount(n), setTime(ms), setPauseOverlay(visible), setAntiGuessActive(active),
  *   showBanner(msg), hideBanner(), showNicknamePrompt(info), showLeaderboard(hint?), setCustomError(msg),
- *   setAntiGuessSettings({method, maxAttempts, maxRegionAttempts}),
- *   setInstallerLabel(label), showInstallerWizard(step, payload),
- *   setInstallerProgress({done, total, message}), showInstallerReport(result), getSidebarOpen()
+ *   setAntiGuessSettings({method, maxAttempts, maxRegionAttempts}), getSidebarOpen()
  * }}
  */
 export function createUI(host, deps) {
@@ -102,7 +92,6 @@ export function createUI(host, deps) {
     </div>
     <div class="ms-side-actions">
       <button type="button" id="leaderboard-open" class="ms-btn ms-btn-primary">排行榜</button>
-      <button type="button" id="installer-open" class="ms-btn">安装到本机</button>
     </div>
   `;
 
@@ -175,53 +164,6 @@ export function createUI(host, deps) {
   `;
   host.appendChild(leaderboardModal);
 
-  // ---------- 安装向导（overlay + modal） ----------
-  const installerModal = document.createElement('div');
-  installerModal.id = 'installer-modal';
-  installerModal.className = 'overlay hidden';
-  installerModal.innerHTML = `
-    <div class="modal ms-wizard">
-      <h2 class="modal-title">安装向导</h2>
-      <div id="installer-step" data-step="welcome">
-        <div class="ms-wiz-page" data-page="welcome">
-          <p>欢迎使用扫雷 Minesweeper！本向导将把游戏安装到你的电脑，并创建桌面 / 开始菜单快捷方式。</p>
-        </div>
-        <div class="ms-wiz-page" data-page="dir">
-          <label class="ms-field">安装目录
-            <input id="install-dir-input" type="text" class="ms-input" placeholder="例如 D:\\Minesweeper">
-          </label>
-          <button type="button" id="install-dir-suggest" class="ms-btn">建议目录</button>
-          <span id="install-dir-error" class="ms-error"></span>
-        </div>
-        <div class="ms-wiz-page" data-page="options">
-          <label class="ms-check"><input id="install-desktop-chk" type="checkbox" checked> 创建桌面快捷方式</label>
-          <label class="ms-check"><input id="install-startmenu-chk" type="checkbox" checked> 创建开始菜单快捷方式</label>
-        </div>
-        <div class="ms-wiz-page" data-page="progress">
-          <div id="install-progress-track" class="ms-progress-track">
-            <div id="install-progress-fill" class="ms-progress-fill" style="width: 0%"></div>
-          </div>
-          <p id="install-progress-text" class="ms-hint">准备中…</p>
-        </div>
-        <div class="ms-wiz-page" data-page="report">
-          <ul id="install-report" class="ms-report"></ul>
-        </div>
-        <div class="modal-actions">
-          <button type="button" id="install-back">上一步</button>
-          <button type="button" id="install-next">下一步</button>
-          <button type="button" id="install-confirm">开始安装</button>
-          <button type="button" id="install-cancel">取消</button>
-          <button type="button" id="install-close">关闭</button>
-        </div>
-      </div>
-      <div id="installer-legacy-clean" class="ms-legacy-clean hidden">
-        <span id="installer-legacy-clean-text" class="ms-legacy-clean-text"></span>
-        <button type="button" id="installer-legacy-clean-btn">立即清理</button>
-      </div>
-    </div>
-  `;
-  host.appendChild(installerModal);
-
   // ---------- 控件引用 ----------
   const sidebarToggle = host.querySelector('#sidebar-toggle');
   const mineCount = host.querySelector('#mine-count');
@@ -249,24 +191,6 @@ export function createUI(host, deps) {
   const leaderboardHint = host.querySelector('#leaderboard-hint');
   const leaderboardClose = host.querySelector('#leaderboard-close');
   const leaderboardOpen = host.querySelector('#leaderboard-open');
-  const installerOpen = host.querySelector('#installer-open');
-  const installerStep = host.querySelector('#installer-step');
-  const installDirInput = host.querySelector('#install-dir-input');
-  const installDirSuggest = host.querySelector('#install-dir-suggest');
-  const installDirError = host.querySelector('#install-dir-error');
-  const installDesktopChk = host.querySelector('#install-desktop-chk');
-  const installStartmenuChk = host.querySelector('#install-startmenu-chk');
-  const installProgressFill = host.querySelector('#install-progress-fill');
-  const installProgressText = host.querySelector('#install-progress-text');
-  const installReport = host.querySelector('#install-report');
-  const installNext = host.querySelector('#install-next');
-  const installBack = host.querySelector('#install-back');
-  const installConfirm = host.querySelector('#install-confirm');
-  const installCancel = host.querySelector('#install-cancel');
-  const installClose = host.querySelector('#install-close');
-  const legacyClean = host.querySelector('#installer-legacy-clean');
-  const legacyCleanText = host.querySelector('#installer-legacy-clean-text');
-  const legacyCleanBtn = host.querySelector('#installer-legacy-clean-btn');
 
   // ---------- 事件绑定：顶栏 ----------
   sidebarToggle.addEventListener('click', () => {
@@ -307,7 +231,6 @@ export function createUI(host, deps) {
   });
 
   leaderboardOpen.addEventListener('click', () => actions.openLeaderboard?.());
-  installerOpen.addEventListener('click', () => actions.openInstaller?.());
 
   // ---------- 事件绑定：横幅 ----------
   function showBanner(msg) {
@@ -434,109 +357,6 @@ export function createUI(host, deps) {
     }
   });
 
-  // ---------- 安装向导 ----------
-  function showInstallerWizard(step, payload = {}) {
-    installerModal.classList.remove('hidden');
-    installerStep.dataset.step = step;
-    if (step === 'dir' && payload.dir) {
-      installDirInput.value = payload.dir;
-    }
-    installDirError.textContent = payload.error ? payload.error : '';
-    if (payload.legacy) {
-      const legacy = payload.legacy;
-      const hasLegacy =
-        legacy.oldNsisDir ||
-        (Array.isArray(legacy.oldShortcuts) && legacy.oldShortcuts.length > 0) ||
-        legacy.oldRegistry;
-      if (hasLegacy) {
-        const parts = [];
-        if (legacy.oldNsisDir) parts.push(`旧版目录 ${legacy.oldNsisDir}`);
-        if (Array.isArray(legacy.oldShortcuts) && legacy.oldShortcuts.length > 0) {
-          parts.push(`旧版快捷方式 ${legacy.oldShortcuts.length} 个`);
-        }
-        if (legacy.oldRegistry) parts.push('旧版注册表项');
-        legacyCleanText.textContent = `检测到旧版残留：${parts.join('，')}。安装前可先清理。`;
-        legacyClean.classList.remove('hidden');
-      } else {
-        legacyClean.classList.add('hidden');
-      }
-    }
-  }
-  function hideInstallerWizard() {
-    installerModal.classList.add('hidden');
-  }
-
-  installNext.addEventListener('click', () => actions.wizardNext?.());
-  installBack.addEventListener('click', () => actions.wizardBack?.());
-  installConfirm.addEventListener('click', () => {
-    actions.runInstall?.({
-      dir: installDirInput.value.trim(),
-      desktopShortcut: installDesktopChk.checked,
-      startMenuShortcut: installStartmenuChk.checked,
-    });
-  });
-  installCancel.addEventListener('click', () => {
-    hideInstallerWizard();
-    actions.wizardCancel?.();
-  });
-  installClose.addEventListener('click', () => {
-    hideInstallerWizard();
-    actions.wizardCancel?.();
-  });
-  installDirSuggest.addEventListener('click', () => actions.suggestDir?.());
-  legacyCleanBtn.addEventListener('click', () => actions.runCleanLegacy?.());
-
-  function setInstallerLabel(label) {
-    installerOpen.textContent = label;
-  }
-
-  function setInstallerProgress({ done, total, message } = {}) {
-    const d = Number(done) || 0;
-    const t = Number(total) || 0;
-    const pct = t > 0 ? Math.round((d / t) * 100) : 0;
-    installProgressFill.style.width = `${pct}%`;
-    installProgressText.textContent = `${d}/${t}${message ? ' ' + message : ''}`;
-  }
-
-  function showInstallerReport(result = {}) {
-    installReport.textContent = '';
-    const errors = Array.isArray(result.errors) ? result.errors : [];
-    const skipped = Array.isArray(result.skippedExtraneous) ? result.skippedExtraneous : [];
-
-    const summary = document.createElement('p');
-    summary.className = 'ms-report-summary';
-    if (result.ok) {
-      summary.textContent = '操作完成，全部成功。';
-    } else {
-      summary.textContent = `操作未完成：共 ${errors.length} 个错误${
-        skipped.length ? `，${skipped.length} 项清单外内容保留不删` : ''
-      }。`;
-    }
-    installReport.appendChild(summary);
-
-    for (const err of errors) {
-      const li = document.createElement('li');
-      li.dataset.code = (err && err.code) || 'ERROR';
-      li.className = classifyReport(err && err.code);
-      li.textContent = (err && err.message) || '未知错误';
-      if (err && err.path) li.textContent += `（${err.path}）`;
-      installReport.appendChild(li);
-    }
-    for (const item of skipped) {
-      const li = document.createElement('li');
-      li.className = 'report-warn';
-      const rel = typeof item === 'string' ? item : (item && item.rel) || '';
-      li.textContent = `清单外内容保留不删：${rel}`;
-      installReport.appendChild(li);
-    }
-    if (result.ok && errors.length === 0 && skipped.length === 0) {
-      const li = document.createElement('li');
-      li.className = 'report-ok';
-      li.textContent = '完成';
-      installReport.appendChild(li);
-    }
-  }
-
   // ---------- 防猜测设置回填 ----------
   function setAntiGuessSettings({ method, maxAttempts, maxRegionAttempts } = {}) {
     if (method) agMethod.value = method;
@@ -579,10 +399,6 @@ export function createUI(host, deps) {
     showLeaderboard,
     setCustomError,
     setAntiGuessSettings,
-    setInstallerLabel,
-    showInstallerWizard,
-    setInstallerProgress,
-    showInstallerReport,
     getSidebarOpen,
   };
 }

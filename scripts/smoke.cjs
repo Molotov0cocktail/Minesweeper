@@ -41,7 +41,11 @@ app.whenReady().then(async () => {
         appChildren: document.getElementById('app') ? document.getElementById('app').children.length : -1,
         modeButtons: document.querySelectorAll('.ms-mode').length,
         title: document.title,
-        hasAPI: typeof window.minesweeperAPI === 'object',
+        // v3 深断言：preload 仅 app.getVersion；installer 面与入口按钮必须不存在（已剥离）
+        hasGetVersion:
+          typeof (window.minesweeperAPI && window.minesweeperAPI.app && window.minesweeperAPI.app.getVersion) === 'function',
+        noInstallerApi: !window.minesweeperAPI || !window.minesweeperAPI.installer,
+        noInstallerOpenBtn: !document.getElementById('installer-open'),
         hasSidebarToggle: !!document.getElementById('sidebar-toggle'),
         bodyClass: document.body.className,
       };

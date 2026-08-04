@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-// 严格测试：左侧侧栏 + 防猜测设置区 + 主页面板 + 安装向导 DOM 契约（见 detailed-design §6）
+// 严格测试：左侧侧栏 + 防猜测设置区 + 主页面板 DOM 契约（见 detailed-design §6）。
+// v3：安装/卸载入口与向导已剥离（独立 MinesweeperSetup），本文件不再断言 installer DOM。
 import { describe, it, expect, vi } from 'vitest';
 import { createUI } from '../src/renderer/ui.js';
 
@@ -23,10 +24,6 @@ function makeDeps() {
       setMaxAttempts: vi.fn(),
       setMaxRegionAttempts: vi.fn(),
       openLeaderboard: vi.fn(),
-      openInstaller: vi.fn(),
-      runInstall: vi.fn(),
-      runUninstall: vi.fn(),
-      runCleanLegacy: vi.fn(),
     },
   };
 }
@@ -153,58 +150,19 @@ describe('排行榜主页面板', () => {
   });
 });
 
-describe('安装/卸载入口与向导', () => {
-  it('#installer-open 存在，setInstallerLabel 切换文案', () => {
-    const { host, ui } = setup();
-    const btn = $(host, '#installer-open');
-    expect(btn).toBeTruthy();
-    ui.setInstallerLabel('安装到本机');
-    expect(btn.textContent).toContain('安装到本机');
-    ui.setInstallerLabel('卸载');
-    expect(btn.textContent).toContain('卸载');
+describe('v3 剥离回归：无安装面', () => {
+  it('侧栏无 #installer-open 按钮，DOM 无 #installer-modal/#installer-step', () => {
+    const { host } = setup();
+    expect($(host, '#installer-open')).toBeNull();
+    expect($(host, '#installer-modal')).toBeNull();
+    expect($(host, '#installer-step')).toBeNull();
   });
 
-  it('openInstaller action 接线', () => {
-    const { host, deps } = setup();
-    $(host, '#installer-open').click();
-    expect(deps.actions.openInstaller).toHaveBeenCalledTimes(1);
-  });
-
-  it('showInstallerWizard 切换步骤（data-step + hidden）', () => {
-    const { host, ui } = setup();
-    const modal = $(host, '#installer-modal');
-    expect(modal.classList.contains('hidden')).toBe(true);
-    ui.showInstallerWizard('dir', { dir: 'D:\\Minesweeper' });
-    expect(modal.classList.contains('hidden')).toBe(false);
-    const step = $(host, '#installer-step');
-    expect(step.dataset.step).toBe('dir');
-    expect($(host, '#install-dir-input').value).toBe('D:\\Minesweeper');
-    ui.showInstallerWizard('report', {});
-    expect(step.dataset.step).toBe('report');
-  });
-
-  it('setInstallerProgress 更新进度条与文案', () => {
-    const { host, ui } = setup();
-    ui.showInstallerWizard('progress', {});
-    ui.setInstallerProgress({ done: 2, total: 10, message: '复制中…' });
-    expect($(host, '#install-progress-fill').style.width).toBe('20%');
-    expect($(host, '#install-progress-text').textContent).toContain('2/10');
-  });
-
-  it('showInstallerReport 渲染错误分类列表 li[data-code]', () => {
-    const { host, ui } = setup();
-    ui.showInstallerReport({
-      ok: false,
-      errors: [
-        { code: 'PERMISSION', message: '权限不足，无法访问 C:\\a.txt', path: 'C:\\a.txt' },
-        { code: 'BUSY', message: '文件被占用，无法删除 C:\\b.txt', path: 'C:\\b.txt' },
-      ],
-      skippedExtraneous: ['user.txt'],
-    });
-    const items = host.querySelectorAll('#install-report li[data-code]');
-    expect(items.length).toBe(2);
-    expect(items[0].dataset.code).toBe('PERMISSION');
-    expect(items[0].textContent).toContain('权限不足');
-    expect(items[1].dataset.code).toBe('BUSY');
+  it('返回 API 无安装方法（setInstallerLabel/showInstallerWizard 等不存在）', () => {
+    const { ui } = setup();
+    expect(typeof ui.setInstallerLabel).toBe('undefined');
+    expect(typeof ui.showInstallerWizard).toBe('undefined');
+    expect(typeof ui.setInstallerProgress).toBe('undefined');
+    expect(typeof ui.showInstallerReport).toBe('undefined');
   });
 });
