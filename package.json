@@ -1,30 +1,20 @@
 {
   "name": "minesweeper",
   "productName": "Minesweeper",
-  "version": "1.0.0",
-  "description": "Electron 经典扫雷：防猜测模式 + 排行榜",
+  "version": "1.2.0",
+  "description": "Electron 经典扫雷：防猜测模式 + 排行榜 + 独立安装器 MinesweeperSetup",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
     "start": "electron .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dist": "electron-builder --win"
+    "dist": "node scripts/build-dist.cjs"
   },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8",
     "jsdom": "^25.0.0",
     "vitest": "^2.1.0"
-  },
-  "build": {
-    "appId": "com.molotov.minesweeper",
-    "productName": "Minesweeper",
-    "files": ["electron/**", "src/**", "index.html", "styles/**", "package.json"],
-    "directories": { "output": "dist" },
-    "win": {
-      "target": ["dir", "zip"],
-      "signAndEditExecutable": false
-    }
   }
 }

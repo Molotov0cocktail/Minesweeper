@@ -7,6 +7,9 @@ out/
 release/
 *.exe
 
+# 打包 staging（剥离版游戏文件，由 scripts/build-dist.cjs 生成）
+.build/
+
 # 应用安装副本目录（绿色版安装产物，含 install-manifest.json 等用户数据，禁止上传）
 game/
 

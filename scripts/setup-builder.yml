@@ -1,0 +1,30 @@
+# MinesweeperSetup 独立安装器构建配置（v3；替代 package.json build 字段）。
+# 用法：npm run dist（scripts/build-dist.cjs 内部调用）：
+#   electron-builder --config scripts/setup-builder.yml --win portable
+# 产物：dist/MinesweeperSetup-<version>-win.exe（便携单文件，NSIS 压缩，
+# 内含 setup 代码 app.asar + 内嵌游戏目录 resources/game-app（extraResources））。
+
+appId: com.molotov.minesweeper
+productName: MinesweeperSetup
+directories:
+  output: dist
+files:
+  - electron/main.cjs
+  - electron/setup.cjs
+  - electron/preload-setup.cjs
+  - electron/installer-runner.cjs
+  - electron/fs-utils.cjs
+  - electron/log.cjs
+  - src/core/installer.js
+  - setup/**
+  - package.json
+extraResources:
+  # 内嵌剥离版游戏文件（.build/game-app，由 scripts/build-dist.cjs staging 生成）；
+  # 安装时前缀映射为 目标/resources/app/（Electron unpacked 应用目录）
+  - from: .build/game-app
+    to: game-app
+win:
+  target:
+    - portable
+  signAndEditExecutable: false
+  artifactName: MinesweeperSetup-${version}-win.${ext}
