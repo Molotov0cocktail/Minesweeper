@@ -356,7 +356,7 @@ describe('buildUninstallCleanupScript', () => {
 
 describe('executeSteps（注入 fake fsOps）', () => {
   it('复制成功序列：mkdir 父目录 → copyFile，done 计数，onStep 回调', async () => {
-    const fs = makeFs({ files: ['D:\\src\\a.exe'], dirs: [] });
+    const fs = makeFs({ files: ['D:\\src\\a.exe', 'D:\\src\\sub\\b.dll'], dirs: [] });
     const onStep = vi.fn();
     const r = await executeSteps([
       { type: 'copy', src: 'D:\\src\\a.exe', dst: 'C:\\App\\a.exe', rel: 'a.exe' },

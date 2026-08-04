@@ -29,9 +29,9 @@ v2:  T0b 文档链+测试（主 agent）
 | T5 | renderer（render/ui/main） | T1-T3+T6 | ✅ | `npx vitest run tests/ui.test.js tests/render.test.js` | v1 Wave C |
 | T0 | tests/ 全套测试（主 agent 先写） | 无 | ✅ | `npm test` | v1 先行完成 |
 | T0b | **v2 文档链 + 5 个严格测试文件** | 无 | 🟨 | `npm test`（旧 111 全绿；新测试预期红=未实现） | v2 先行 |
-| T7 | core/settings.js 设置持久化 | 无 | ⬜ | `npx vitest run tests/settings.test.js` | v2 Wave A |
-| T8 | core/installer.js 安装/卸载纯逻辑 | 无 | ⬜ | `npx vitest run tests/installer.test.js` | v2 Wave A |
-| T9 | solve.js 重构 deduce + 高级局部重排 | T1+T2 | ⬜ | `npx vitest run tests/solve.test.js tests/solve.retries.test.js tests/solve.advanced.test.js` | v2 Wave A |
+| T7 | core/settings.js 设置持久化 | 无 | ✅ | `npx vitest run tests/settings.test.js` | v2 Wave A，14/14 |
+| T8 | core/installer.js 安装/卸载纯逻辑 | 无 | ✅ | `npx vitest run tests/installer.test.js` | v2 Wave A，43/43（含主 agent 修正测试假数据 1 处） |
+| T9 | solve.js 重构 deduce + 高级局部重排 | T1+T2 | ✅ | `npx vitest run tests/solve.test.js tests/solve.retries.test.js tests/solve.advanced.test.js` | v2 Wave A，24/24（主 agent 补候选循环预算检查） |
 | T10 | core/game.js 防猜测配置集成+回退 | T9 | ⬜ | `npx vitest run tests/game.test.js tests/game.advanced.test.js` | v2 Wave B |
 | T11 | electron 主进程（preload/IPC/runner/log + 冒烟更新） | T8 | ⬜ | node --check + 冒烟 | v2 Wave B |
 | T12 | renderer 侧栏+面板+安装向导+美化 | T7+T10+T11 | ⬜ | `npx vitest run tests/ui.test.js tests/ui.sidebar.test.js` + 冒烟 | v2 Wave C |
@@ -57,3 +57,5 @@ v2:  T0b 文档链+测试（主 agent）
 - 2026-08-04 **v2 需求确认完成**（2 轮提问，8 项决策）：应用内安装/卸载管理器、D:\Minesweeper 默认路径、清单式删除、不复现崩溃走鲁棒性防御、歧义连通簇、回退标准、侧栏划分、主页面板+美化。
 - 2026-08-04 v2 文档链更新：proposal（FR9/FR10/FR11 + 决策记录）、high-level-design、detailed-design（§3 deduce/高级算法、§4 game v2、§5b settings、§5c installer、§6 侧栏 DOM、§7 IPC）、任务文件 t7~t13。
 - 2026-08-04 T0b 编写 5 个严格测试文件（settings/solve.advanced/game.advanced/installer/ui.sidebar），旧 111 用例保持全绿基线。
+- 2026-08-04 Wave A 完成：T7 settings.js（14/14）、T8 installer.js（43/43）、T9 solve.js deduce+高级模式（24/24）。
+  主 agent 审阅：修正 installer.test.js 假数据缺源文件 1 处（T8 报告阻塞）；solve.js 补候选循环预算检查（契约偏差）。
