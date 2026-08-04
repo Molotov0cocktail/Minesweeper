@@ -3,25 +3,39 @@
 > 全流程唯一进度源。主 agent 负责维护；subagent 完成一个任务后更新。
 > 状态：⬜ 未开始 / 🟨 进行中 / ✅ 完成 / ❌ 阻塞
 
-## 依赖图
+## 依赖图（v1 + v2）
 ```
-T6 ───────────┐
-T1 ──▶ T2 ──▶ T3 ──▶ T5
-T4 ─────────────────▶ T5
+v1:  T6 ───────────┐
+     T1 ──▶ T2 ──▶ T3 ──▶ T5
+     T4 ─────────────────▶ T5
+v2:  T0b 文档链+测试（主 agent）
+     Wave A（并行）: T7 settings ──▶ ┐
+                     T8 installer ──▶ ├─▶ T12 renderer（依赖 T7+T10+T11）
+                     T9 solve 重构 ──▶│
+     Wave B（并行）: T10 game（依赖 T9）┘
+                     T11 electron 壳（依赖 T8）──▶ T12
+     Wave D: T13 打包 + 全量验证 + README + AGENTS.md
 ```
-Wave A: T1, T4, T6（并行）；Wave B: T2, T3；Wave C: T5；Wave D: 集成/打包/文档
 
 ## 任务清单
 
 | 任务 | 内容 | 依赖 | 状态 | 测试命令 | 备注 |
 |---|---|---|---|---|---|
-| T1 | core/board.js 棋盘模型 | 无 | ✅ | `npx vitest run tests/board.test.js tests/modes.test.js` | Wave A |
-| T4 | core/leaderboard.js 排行榜 | 无 | ✅ | `npx vitest run tests/leaderboard.test.js` | Wave A |
-| T6 | electron 壳 + package.json + index.html + css | 无 | ✅ | vitest 可启动 / node --check | Wave A |
-| T2 | core/solve.js 可解性+防猜测 | T1 | ✅ | `npx vitest run tests/solve.test.js tests/solve.retries.test.js` | Wave B |
-| T3 | core/game.js 状态机+计时 | T1+T2 | ✅ | `npx vitest run tests/game.test.js` | Wave B |
-| T5 | renderer（render/ui/main） | T1-T3+T6 | ✅ | `npx vitest run tests/ui.test.js tests/render.test.js` | Wave C |
-| T0 | tests/ 全套测试（主 agent 先写） | 无 | ✅ | `npm test` | 先行完成 |
+| T1 | core/board.js 棋盘模型 | 无 | ✅ | `npx vitest run tests/board.test.js tests/modes.test.js` | v1 Wave A |
+| T4 | core/leaderboard.js 排行榜 | 无 | ✅ | `npx vitest run tests/leaderboard.test.js` | v1 Wave A |
+| T6 | electron 壳 + package.json + index.html + css | 无 | ✅ | vitest 可启动 / node --check | v1 Wave A |
+| T2 | core/solve.js 可解性+防猜测 | T1 | ✅ | `npx vitest run tests/solve.test.js tests/solve.retries.test.js` | v1 Wave B |
+| T3 | core/game.js 状态机+计时 | T1+T2 | ✅ | `npx vitest run tests/game.test.js` | v1 Wave B |
+| T5 | renderer（render/ui/main） | T1-T3+T6 | ✅ | `npx vitest run tests/ui.test.js tests/render.test.js` | v1 Wave C |
+| T0 | tests/ 全套测试（主 agent 先写） | 无 | ✅ | `npm test` | v1 先行完成 |
+| T0b | **v2 文档链 + 5 个严格测试文件** | 无 | 🟨 | `npm test`（旧 111 全绿；新测试预期红=未实现） | v2 先行 |
+| T7 | core/settings.js 设置持久化 | 无 | ⬜ | `npx vitest run tests/settings.test.js` | v2 Wave A |
+| T8 | core/installer.js 安装/卸载纯逻辑 | 无 | ⬜ | `npx vitest run tests/installer.test.js` | v2 Wave A |
+| T9 | solve.js 重构 deduce + 高级局部重排 | T1+T2 | ⬜ | `npx vitest run tests/solve.test.js tests/solve.retries.test.js tests/solve.advanced.test.js` | v2 Wave A |
+| T10 | core/game.js 防猜测配置集成+回退 | T9 | ⬜ | `npx vitest run tests/game.test.js tests/game.advanced.test.js` | v2 Wave B |
+| T11 | electron 主进程（preload/IPC/runner/log + 冒烟更新） | T8 | ⬜ | node --check + 冒烟 | v2 Wave B |
+| T12 | renderer 侧栏+面板+安装向导+美化 | T7+T10+T11 | ⬜ | `npx vitest run tests/ui.test.js tests/ui.sidebar.test.js` + 冒烟 | v2 Wave C |
+| T13 | 打包 dir/zip + 全量验证 + README + AGENTS.md | 全部 | ⬜ | `npm test` + 冒烟 + `npm run dist` + 手动验收 | v2 Wave D |
 
 ## 运行日志
 - 2026-08-03 需求确认完成（4 轮提问，12 项决策）。
@@ -40,3 +54,6 @@ Wave A: T1, T4, T6（并行）；Wave B: T2, T3；Wave C: T5；Wave D: 集成/�
 - 2026-08-03 `npm run dist` 打包成功：`dist/Minesweeper Setup 1.0.0.exe`（NSIS，78MB）+ `dist/win-unpacked/Minesweeper.exe`。
 - 2026-08-03 打包备注：需 ELECTRON_MIRROR / ELECTRON_BUILDER_BINARIES_MIRROR 镜像；signAndEditExecutable=false 避开 winCodeSign 符号链接权限问题。
 - 2026-08-03 全部任务完成，待最终推送。
+- 2026-08-04 **v2 需求确认完成**（2 轮提问，8 项决策）：应用内安装/卸载管理器、D:\Minesweeper 默认路径、清单式删除、不复现崩溃走鲁棒性防御、歧义连通簇、回退标准、侧栏划分、主页面板+美化。
+- 2026-08-04 v2 文档链更新：proposal（FR9/FR10/FR11 + 决策记录）、high-level-design、detailed-design（§3 deduce/高级算法、§4 game v2、§5b settings、§5c installer、§6 侧栏 DOM、§7 IPC）、任务文件 t7~t13。
+- 2026-08-04 T0b 编写 5 个严格测试文件（settings/solve.advanced/game.advanced/installer/ui.sidebar），旧 111 用例保持全绿基线。
