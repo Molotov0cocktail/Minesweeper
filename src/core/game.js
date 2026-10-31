@@ -14,6 +14,7 @@ import {
   isWin,
   revealAllMines,
   indexAt,
+  CELL_HIDDEN,
 } from './board.js';
 import { generateAntiGuess, generateAntiGuessAdvanced } from './solve.js';
 
@@ -196,6 +197,8 @@ class Game {
   #firstReveal(row, col) {
     const safeIdx = indexAt(this.rows, this.cols, row, col);
     if (safeIdx === -1) return { type: 'noop' };
+    // 首点必须真正能翻开：旗或问号不触发布雷、求解与计时。
+    if (this.board.cells[safeIdx].state !== CELL_HIDDEN) return { type: 'noop' };
 
     if (this.antiGuess) {
       if (this.antiGuessMethod === 'advanced') {
