@@ -4,6 +4,7 @@ import { createGame, STATE } from '../core/game.js';
 import { MODES, validateCustom } from '../core/modes.js';
 import { createLeaderboard, LEADERBOARD_MODES } from '../core/leaderboard.js';
 import { createSettings } from '../core/settings.js';
+import { DEFAULT_GAMEPAD_BINDINGS, rebindGamepad } from '../core/gamepad.js';
 import { CELL_REVEALED, CELL_FLAGGED, CELL_QUESTIONED } from '../core/board.js';
 import { drawBoard } from './render.js';
 import { createUI, formatTime } from './ui.js';
@@ -38,6 +39,7 @@ export function startApp({
   let destroyed = false;
   let game = null;
   let cellSize = 24;
+  let preferredCellSize = null;
   let pendingScore = null;
   let selection = { row: 0, col: 0 };
   let drag = null;
@@ -65,7 +67,7 @@ export function startApp({
   boardWrap.appendChild(focusMarker);
   canvas.tabIndex = 0;
   canvas.setAttribute('role', 'group');
-  canvas.setAttribute('aria-describedby', 'controls-help');
+  canvas.removeAttribute('aria-describedby');
   // 显式使用内容盒，边框不压缩逻辑格子，也不计入指针坐标。
   canvas.style.boxSizing = 'content-box';
 
@@ -125,6 +127,7 @@ export function startApp({
     }
     ui.setMineCount(game.getRemainingMines());
     ui.setTime(game.getElapsedMs());
+    ui.setBoardSize(preferredCellSize ?? 0);
     updateGameStatus();
     updateAntiGuessStatus();
     updateSelection();
@@ -134,6 +137,11 @@ export function startApp({
     if (!game || destroyed) return;
     // 规格和状态会影响换行高度：先回填，再测量真实剩余空间。
     updateGameStatus();
+    if (preferredCellSize !== null) {
+      cellSize = preferredCellSize;
+      render();
+      return;
+    }
     const sidebar = document.body.classList.contains('sidebar-open') ? SIDEBAR_WIDTH : 0;
     let availableWidth = window.innerWidth - 56 - sidebar;
     let availableHeight = window.innerHeight - 220;
@@ -151,7 +159,8 @@ export function startApp({
         - horizontalExtras(wrapStyle) - horizontalExtras(canvasStyle);
     }
     if (mainArea.clientHeight > 0) {
-      const blocks = [...mainArea.children].filter(element => getComputedStyle(element).display !== 'none');
+      const blocks = [...mainArea.children].filter(element => !element.hidden && !element.classList.contains('hidden')
+        && getComputedStyle(element).display !== 'none');
       const otherHeight = blocks.filter(element => element !== boardWrap).reduce((height, element) => {
         const style = getComputedStyle(element);
         return height + element.offsetHeight + pixels(style, 'marginTop') + pixels(style, 'marginBottom');
@@ -183,6 +192,7 @@ export function startApp({
     pendingScore = null;
     selection = { row: 0, col: 0 };
     drag = null;
+    preferredCellSize = null;
     ui.resetTransient();
     ui.hideBanner();
     fitToWindow();
@@ -256,6 +266,25 @@ export function startApp({
       ui.setAntiGuessSettings(settingsToUi(value));
       game.maxRegionAttempts = value.maxRegionAttempts;
     },
+    setGamepadBinding(action, button) {
+      const next = rebindGamepad(settings.get().gamepadBindings, action, button);
+      const value = settings.update({ gamepadBindings: next });
+      ui.setGamepadBindings(value.gamepadBindings);
+    },
+    resetGamepadBindings() {
+      const value = settings.update({ gamepadBindings: DEFAULT_GAMEPAD_BINDINGS });
+      ui.setGamepadBindings(value.gamepadBindings);
+    },
+    setFocusView(enabled) {
+      const value = settings.update({ focusView: Boolean(enabled) });
+      ui.setFocusView(value.focusView);
+      fitToWindow();
+    },
+    setBoardSize(value) {
+      if (!Number.isInteger(value) || (value !== 0 && (value < MIN_CELL || value > MAX_CELL))) return;
+      preferredCellSize = value === 0 ? null : value;
+      fitToWindow();
+    },
     openLeaderboard() { ui.showLeaderboard(); },
   };
 
@@ -285,26 +314,13 @@ export function startApp({
 
   function controllerEnabled() {
     if (destroyed || background || document.hidden) return false;
-    // 昵称输入框保留 A/B 提交与取消；普通设置输入框中不接管手柄。
-    return visible('nickname-modal') || !isTextInput(document.activeElement);
+    // 菜单、页面和模态内的输入交给 UI 编辑；范围外的输入框不接管。
+    return ui.hasControllerContext() || !isTextInput(document.activeElement);
   }
 
   function handleController(action) {
     if (!controllerEnabled()) return;
-    if (visible('nickname-modal')) {
-      if (action === 'reveal') host.querySelector('#nickname-submit').click();
-      else if (action === 'cancel') host.querySelector('#nickname-cancel').click();
-      return;
-    }
-    if (visible('pause-overlay')) {
-      if (action === 'reveal' || action === 'pause') actions.resume();
-      return;
-    }
-    if (action === 'cancel') {
-      if (visible('leaderboard-modal')) host.querySelector('#leaderboard-close').click();
-      else if (ui.getSidebarOpen()) host.querySelector('#sidebar-toggle').click();
-      return;
-    }
+    if (ui.handleController(action)) return;
     const directions = { up: [-1, 0], down: [1, 0], left: [0, -1], right: [0, 1] };
     if (directions[action]) {
       canvas.focus({ preventScroll: true });
@@ -359,8 +375,14 @@ export function startApp({
 
   listen(document, 'keydown', event => {
     if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
-    if (isTextInput(event.target)) return;
     const key = event.key.toLowerCase();
+    if (key === 'f1' || key === 'f10' || key === 'escape') {
+      if (event.repeat) return;
+      const action = key === 'f1' ? 'help' : key === 'f10' ? 'focus' : 'cancel';
+      if (ui.handleController(action)) event.preventDefault();
+      return;
+    }
+    if (isTextInput(event.target)) return;
     if (hasModal()) {
       // 暂停遮罩仅允许 P 继续；昵称弹窗等其他情形不接管游戏快捷键。
       if (key === 'p' && !event.repeat && game.state === STATE.PAUSED && !visible('nickname-modal')) {
@@ -398,11 +420,13 @@ export function startApp({
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
     const delta = Math.abs(dx) >= Math.abs(dy) ? dx : dy;
-    cellSize = clamp(drag.size + Math.round(delta / 3), MIN_CELL, MAX_CELL);
+    preferredCellSize = clamp(drag.size + Math.round(delta / 3), MIN_CELL, MAX_CELL);
+    cellSize = preferredCellSize;
     render();
   });
   listen(window, 'mouseup', () => { drag = null; });
   listen(window, 'resize', fitToWindow);
+  listen(host, 'ui-layout-change', fitToWindow);
   for (const details of host.querySelectorAll('#controls-help details')) listen(details, 'toggle', fitToWindow);
 
   function pauseInBackground() {
@@ -419,6 +443,8 @@ export function startApp({
 
   const initialSettings = settings.get();
   ui.setAntiGuessSettings(settingsToUi(initialSettings));
+  ui.setGamepadBindings(initialSettings.gamepadBindings);
+  ui.setFocusView(initialSettings.focusView);
   host.querySelector('#anti-guess-toggle').checked = initialSettings.antiGuess;
   newGame({ rows: MODES.beginner.rows, cols: MODES.beginner.cols, mines: MODES.beginner.mines, mode: 'beginner' });
   // 时钟只刷新文本；棋盘由操作、缩放、resize 等事件驱动重画。
@@ -429,6 +455,7 @@ export function startApp({
     onAction: handleController,
     onStatus(status) { if (!destroyed) ui.setControllerStatus(status); },
     isEnabled: controllerEnabled,
+    getBindings: () => settings.get().gamepadBindings,
   });
 
   return {
@@ -444,7 +471,7 @@ export function startApp({
       ui.destroy();
       focusMarker.remove();
       host.replaceChildren(...originalChildren);
-      document.body.classList.remove('sidebar-open');
+      document.body.classList.remove('sidebar-open', 'focus-view');
     },
   };
 }

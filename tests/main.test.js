@@ -68,14 +68,15 @@ describe('装配与绘制生命周期',()=>{
     expect(drawBoard).toHaveBeenCalledTimes(draws);
     expect(vi.getTimerCount()).toBe(0);
   });
-  it('适配扣除实际状态区和提示高度，键盘移动滚入可视区',()=>{
+  it('隐藏说明页不占棋盘适配高度，键盘移动滚入可视区',()=>{
     boot();
     const mainArea=document.querySelector('.ms-main');
     vi.spyOn(mainArea,'clientHeight','get').mockReturnValue(480);
     vi.spyOn(document.querySelector('.ms-game-summary'),'offsetHeight','get').mockReturnValue(80);
-    vi.spyOn($('controls-help'),'offsetHeight','get').mockReturnValue(100);
+    vi.spyOn($('controls-help'),'offsetHeight','get').mockReturnValue(1000);
     window.dispatchEvent(new Event('resize'));
-    expect(parseFloat(canvas.style.height)).toBeLessThanOrEqual(300);
+    expect(parseFloat(canvas.style.height)).toBeGreaterThan(300);
+    expect(parseFloat(canvas.style.height)).toBeLessThanOrEqual(400);
     const marker=$('board-focus'); marker.scrollIntoView=vi.fn();
     canvas.focus(); key(canvas,'ArrowDown');
     expect(marker.scrollIntoView).toHaveBeenCalledWith({block:'nearest',inline:'nearest'});
