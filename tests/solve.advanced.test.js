@@ -50,10 +50,10 @@ describe('deduce：与 isSolvable 等价 + 精确状态', () => {
     expect(isSolvable(ROWS, COLS, new Set([0, 2, 3]), START)).toBe(false);
   });
 
-  it('L0={1,4,19}：unknown=[0,1,3,4,9,14,19,24]，簇 [[0,1],[3,4,9,14,19,24]]', () => {
+  it('L0={1,4,19}：双向推理排除14，unknown=[0,1,3,4,9,19,24]，三簇 [[0,1],[19,24],[3,4,9]]', () => {
     const d = deduce(ROWS, COLS, new Set([1, 4, 19]), START);
-    expect(sortArr(d.unknown)).toEqual([0, 1, 3, 4, 9, 14, 19, 24]);
-    expect(d.clusters.map(sortArr)).toEqual([[0, 1], [3, 4, 9, 14, 19, 24]]);
+    expect(sortArr(d.unknown)).toEqual([0, 1, 3, 4, 9, 19, 24]);
+    expect(d.clusters.map(sortArr)).toEqual([[0, 1], [19, 24], [3, 4, 9]]);
     expect(sortArr(d.smallest)).toEqual([0, 1]);
   });
 

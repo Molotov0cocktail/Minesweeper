@@ -49,13 +49,25 @@ export function density(rows, cols, mines) {
  *   smallest=clusters[0]（unknown 为空时 null）。
  */
 export function deduce(rows, cols, mineSet, startIdx) {
+  const invalid = () => ({ solved: false, unknown: new Set(), clusters: [], smallest: null });
+  if (!Number.isInteger(rows) || rows <= 0 || rows > 60 || !Number.isInteger(cols) || cols <= 0 || cols > 60 ||
+      !Number.isSafeInteger(rows * cols) || !(mineSet instanceof Set) ||
+      !Number.isInteger(startIdx) || startIdx < 0 || startIdx >= rows * cols || mineSet.has(startIdx)) {
+    return invalid();
+  }
   const total = rows * cols;
+  for (const idx of mineSet) {
+    if (!Number.isInteger(idx) || idx < 0 || idx >= total) return invalid();
+  }
   const target = total - mineSet.size;
+
+  // 同次推理中的几何关系不变；前沿、洪泛与连通簇共享一份邻居表。
+  const adjacent = Array.from({ length: total }, (_, idx) => neighborIndexes(rows, cols, idx));
 
   // 每格 count：相邻雷数
   const count = new Array(total).fill(0);
   for (const m of mineSet) {
-    for (const ni of neighborIndexes(rows, cols, m)) {
+    for (const ni of adjacent[m]) {
       count[ni] += 1;
     }
   }
@@ -75,7 +87,7 @@ export function deduce(rows, cols, mineSet, startIdx) {
       changed = true;
       if (mineSet.has(cur)) continue; // 雷不扩散
       if (count[cur] === 0) {
-        for (const ni of neighborIndexes(rows, cols, cur)) {
+        for (const ni of adjacent[cur]) {
           if (!revealed.has(ni) && !flagged.has(ni)) queue.push(ni);
         }
       }
@@ -97,7 +109,7 @@ export function deduce(rows, cols, mineSet, startIdx) {
       if (!revealed.has(i) || count[i] === 0) continue;
       const cand = new Set();
       let flaggedCount = 0;
-      for (const ni of neighborIndexes(rows, cols, i)) {
+      for (const ni of adjacent[i]) {
         if (flagged.has(ni)) {
           flaggedCount += 1;
         } else if (!revealed.has(ni)) {
@@ -128,11 +140,12 @@ export function deduce(rows, cols, mineSet, startIdx) {
 
     // 规则3：2-集子集排除（两两比较；cand 用 Set 便于子集判断）
     for (let a = 0; a < frontiers.length; a++) {
-      const A = frontiers[a];
       for (let b = a + 1; b < frontiers.length; b++) {
-        const B = frontiers[b];
-        // 需要 cand_A ⊊ cand_B 才可能有非空差集
-        if (A.cand.size >= B.cand.size) continue;
+        let A = frontiers[a];
+        let B = frontiers[b];
+        // 每对约束都以较小集合为 A，覆盖两个子集方向，避免扫描顺序影响推理。
+        if (A.cand.size === B.cand.size) continue;
+        if (A.cand.size > B.cand.size) [A, B] = [B, A];
         let subset = true;
         for (const i of A.cand) {
           if (!B.cand.has(i)) {
@@ -179,7 +192,7 @@ export function deduce(rows, cols, mineSet, startIdx) {
     while (queue.length > 0) {
       const cur = queue.pop();
       member.push(cur);
-      for (const ni of neighborIndexes(rows, cols, cur)) {
+      for (const ni of adjacent[cur]) {
         if (unknown.has(ni) && !visited.has(ni)) {
           visited.add(ni);
           queue.push(ni);
@@ -321,15 +334,16 @@ export function generateAntiGuessAdvanced(rows, cols, mines, startIdx, opts = {}
     return n;
   };
 
-  while (true) {
+  while (totalDeduce < MAX_TOTAL_DEDUCE) {
     // a. 外层循环每轮 = 一次区域级调整
-    let state = deduce(rows, cols, mineSet, startIdx);
+    const state = deduce(rows, cols, mineSet, startIdx);
     totalDeduce += 1;
     if (state.solved) {
       return { ok: true, mineSet, attempts: totalDeduce, regionAttempts, moves, regions };
     }
 
     const R = state.smallest;
+    if (!R) break;
     regions += 1;
 
     const mR = countMinesIn(R);
@@ -349,8 +363,8 @@ export function generateAntiGuessAdvanced(rows, cols, mines, startIdx, opts = {}
         const newMineSet = new Set();
         for (const m of mineSet) if (!R.has(m)) newMineSet.add(m);
         for (const m of newMinesInR) newMineSet.add(m);
-        state = deduce(rows, cols, newMineSet, startIdx);
-        if (state.solved) {
+        const trial = deduce(rows, cols, newMineSet, startIdx);
+        if (trial.solved) {
           return { ok: true, mineSet: newMineSet, attempts: totalDeduce, regionAttempts, moves, regions };
         }
       }
@@ -359,7 +373,7 @@ export function generateAntiGuessAdvanced(rows, cols, mines, startIdx, opts = {}
     // c. 减雷移雷（区域重排耗尽或簇全雷/池不足）
     if (totalDeduce >= MAX_TOTAL_DEDUCE || moves >= MAX_MOVES) break;
 
-    // 移雷前"正常区域"既有歧义格（供接受条件判定）
+    // 以当前 mineSet 的推理状态为基准，失败试排的状态不能污染移雷验证。
     const outsideStuck = new Set();
     for (const i of state.unknown) if (!R.has(i)) outsideStuck.add(i);
 
@@ -378,8 +392,8 @@ export function generateAntiGuessAdvanced(rows, cols, mines, startIdx, opts = {}
 
     let accepted = false;
     for (const c of candidates) {
+      if (totalDeduce >= MAX_TOTAL_DEDUCE) break;
       totalDeduce += 1;
-      if (totalDeduce >= MAX_TOTAL_DEDUCE) break; // 预算封顶（契约：整体跳出 → 失败）
       const m2 = new Set(mineSet);
       m2.delete(removed);
       m2.add(c);
