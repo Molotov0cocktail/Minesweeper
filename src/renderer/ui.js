@@ -28,17 +28,23 @@ export function formatTime(ms) {
  * @returns {{
  *   setMineCount(n), setTime(ms), setPauseOverlay(visible), setAntiGuessActive(active),
  *   showBanner(msg), hideBanner(), showNicknamePrompt(info), showLeaderboard(hint?), setCustomError(msg),
- *   setAntiGuessSettings({method, maxAttempts, maxRegionAttempts}), getSidebarOpen()
+ *   setAntiGuessSettings({method, maxAttempts, maxRegionAttempts}), getSidebarOpen(),
+ *   setGameStatus({state, mode, rows, cols, mines, revealedCount}), resetTransient(), destroy()
  * }}
  */
 export function createUI(host, deps) {
   const actions = deps.actions || {};
+  const cleanups = [];
+  function listen(target, type, handler) {
+    target.addEventListener(type, handler);
+    cleanups.push(() => target.removeEventListener(type, handler));
+  }
 
   // ---------- 顶栏 ----------
   const topbar = document.createElement('header');
   topbar.className = 'ms-topbar';
   topbar.innerHTML = `
-    <button type="button" id="sidebar-toggle" class="ms-hamburger bevel-raised" aria-label="菜单" title="菜单">
+    <button type="button" id="sidebar-toggle" class="ms-hamburger bevel-raised" aria-label="菜单" aria-controls="sidebar" aria-expanded="false" title="菜单">
       <span class="ms-hamburger-line"></span>
     </button>
     <div class="ms-topbar-title">扫雷 Minesweeper</div>
@@ -47,21 +53,22 @@ export function createUI(host, deps) {
       <span class="ms-status">时间：<b id="timer">00:00</b></span>
     </div>
     <div class="ms-topbar-actions">
-      <button type="button" id="pause-btn">暂停</button>
-      <button type="button" id="restart-btn">重新开始</button>
+      <button type="button" id="pause-btn" title="暂停 / 继续（P）">暂停</button>
+      <button type="button" id="restart-btn" title="重新开始（F2）">重新开始</button>
     </div>
   `;
 
   // ---------- 左侧栏 ----------
   const sidebar = document.createElement('aside');
   sidebar.id = 'sidebar';
+  sidebar.setAttribute('aria-label', '游戏设置');
   sidebar.innerHTML = `
     <div class="ms-side-section">
       <h3 class="ms-side-title">等级</h3>
       <div class="ms-mode-group">
-        <button type="button" class="ms-mode bevel-raised" data-mode="beginner">初级</button>
-        <button type="button" class="ms-mode bevel-raised" data-mode="intermediate">中级</button>
-        <button type="button" class="ms-mode bevel-raised" data-mode="expert">高级</button>
+        <button type="button" class="ms-mode bevel-raised" data-mode="beginner" aria-pressed="false">初级 <span>9 × 9 · 10 雷</span></button>
+        <button type="button" class="ms-mode bevel-raised" data-mode="intermediate" aria-pressed="false">中级 <span>16 × 16 · 40 雷</span></button>
+        <button type="button" class="ms-mode bevel-raised" data-mode="expert" aria-pressed="false">高级 <span>16 × 30 · 99 雷</span></button>
       </div>
     </div>
     <div class="ms-side-section">
@@ -101,13 +108,38 @@ export function createUI(host, deps) {
   banner.className = 'banner hidden';
   banner.innerHTML = `
     <span id="warning-banner-text"></span>
-    <span id="warning-banner-close" class="banner-close">×</span>
+    <button type="button" id="warning-banner-close" class="banner-close" aria-label="关闭提示">×</button>
   `;
   const main = document.createElement('main');
   main.className = 'ms-main';
+  const summary = document.createElement('section');
+  summary.className = 'ms-game-summary';
+  summary.setAttribute('aria-label', '当前对局');
+  summary.innerHTML = `
+    <div class="ms-game-heading">
+      <div id="game-meta" class="ms-game-meta"></div>
+      <span id="game-status" class="ms-game-status" role="status" aria-live="polite"></span>
+    </div>
+    <div class="ms-progress-heading"><span>安全格进度</span><span id="game-progress-text">0 / 0</span></div>
+    <progress id="game-progress" max="1" value="0" aria-label="已翻开的安全格"></progress>
+  `;
+  const help = document.createElement('footer');
+  help.id = 'controls-help';
+  help.className = 'ms-controls-help';
+  help.innerHTML = `
+    <p>左键翻开 · 右键标记 · 首点安全</p>
+    <p><kbd>方向键</kbd> 移动 <kbd>Enter / 空格</kbd> 翻开 <kbd>F</kbd> 标记</p>
+    <p><kbd>P</kbd> 暂停 / 继续 <kbd>F2</kbd> 重开 · 拖动右下角缩放</p>
+    <details><summary>数字格与暂停说明</summary>
+      <p>左键数字格：相邻旗数等于数字时，翻开周围未标旗格。右键数字格：未开格数等于数字时，批量标旗。键盘翻开与标记支持相同操作。</p>
+      <p>按 Tab 聚焦棋盘后可使用方向键。切出窗口自动暂停，返回后手动继续。</p>
+    </details>
+  `;
   const boardWrap = host.querySelector('#board-wrap');
   main.appendChild(banner);
+  main.appendChild(summary);
   if (boardWrap) main.appendChild(boardWrap);
+  main.appendChild(help);
 
   host.appendChild(topbar);
   host.appendChild(sidebar);
@@ -121,10 +153,13 @@ export function createUI(host, deps) {
   const pauseOverlay = document.createElement('div');
   pauseOverlay.id = 'pause-overlay';
   pauseOverlay.className = 'overlay hidden';
+  pauseOverlay.setAttribute('role', 'dialog');
+  pauseOverlay.setAttribute('aria-modal', 'true');
+  pauseOverlay.setAttribute('aria-labelledby', 'pause-title');
   pauseOverlay.innerHTML = `
     <div class="modal">
-      <h2 class="modal-title">已暂停</h2>
-      <p class="modal-hint">游戏已暂停，计时冻结。</p>
+      <h2 id="pause-title" class="modal-title">已暂停</h2>
+      <p class="modal-hint">休息一下。棋盘已遮盖，计时已冻结。</p>
       <div class="modal-actions">
         <button type="button" id="resume-btn">继续</button>
       </div>
@@ -136,11 +171,14 @@ export function createUI(host, deps) {
   const nicknameModal = document.createElement('div');
   nicknameModal.id = 'nickname-modal';
   nicknameModal.className = 'overlay hidden';
+  nicknameModal.setAttribute('role', 'dialog');
+  nicknameModal.setAttribute('aria-modal', 'true');
+  nicknameModal.setAttribute('aria-labelledby', 'nickname-title');
   nicknameModal.innerHTML = `
     <div class="modal">
-      <h2 class="modal-title">恭喜胜利！</h2>
+      <h2 id="nickname-title" class="modal-title">恭喜胜利！</h2>
       <p class="modal-hint">成绩进入该榜单前 10 名，请输入昵称：</p>
-      <input id="nickname-input" type="text" maxlength="16" class="ms-input" placeholder="昵称">
+      <input id="nickname-input" type="text" maxlength="16" class="ms-input" placeholder="昵称" aria-label="排行榜昵称" autocomplete="off">
       <div class="modal-actions">
         <button type="button" id="nickname-submit">提交</button>
         <button type="button" id="nickname-cancel">取消</button>
@@ -191,27 +229,84 @@ export function createUI(host, deps) {
   const leaderboardHint = host.querySelector('#leaderboard-hint');
   const leaderboardClose = host.querySelector('#leaderboard-close');
   const leaderboardOpen = host.querySelector('#leaderboard-open');
+  const gameMeta = host.querySelector('#game-meta');
+  const gameStatus = host.querySelector('#game-status');
+  const gameProgress = host.querySelector('#game-progress');
+  const progressText = host.querySelector('#game-progress-text');
+
+  let pauseReturnFocus = null;
+  let nicknameReturnFocus = null;
+  let destroyed = false;
+
+  function visible(element) {
+    return !element.classList.contains('hidden');
+  }
+
+  function restoreFocus(element) {
+    function available(target) {
+      if (!target?.isConnected || target.matches(':disabled')) return false;
+      for (let node = target; node; node = node.parentElement) {
+        if (node.inert || node.hidden || node.classList.contains('hidden')) return false;
+      }
+      return true;
+    }
+    if (available(element)) element.focus?.();
+    if (!available(element) || document.activeElement !== element) {
+      const canvas = host.querySelector('#board-canvas');
+      if (available(canvas)) canvas.focus();
+    }
+  }
+
+  function activeDialog() {
+    return visible(nicknameModal) ? nicknameModal : visible(pauseOverlay) ? pauseOverlay : null;
+  }
+
+  // 模态开启时阻止背景控件被 Tab/辅助技术继续操作；关闭侧栏同样不可聚焦。
+  function syncInert() {
+    const dialog = activeDialog();
+    for (const child of host.children) child.inert = Boolean(dialog && child !== dialog);
+    if (!dialog) sidebar.inert = !getSidebarOpen();
+  }
+
+  function syncSidebar() {
+    sidebarToggle.setAttribute('aria-expanded', String(getSidebarOpen()));
+    syncInert();
+  }
+  syncSidebar();
+
+  // 顶栏窄窗口时换行，侧栏始终从实际顶栏下方开始。
+  function updateTopbarHeight() {
+    const height = topbar.getBoundingClientRect().height;
+    if (height > 0) host.style.setProperty('--topbar-height', `${height}px`);
+  }
+  updateTopbarHeight();
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(updateTopbarHeight);
+    observer.observe(topbar);
+    cleanups.push(() => observer.disconnect());
+  }
 
   // ---------- 事件绑定：顶栏 ----------
-  sidebarToggle.addEventListener('click', () => {
+  listen(sidebarToggle, 'click', () => {
     document.body.classList.toggle('sidebar-open');
+    syncSidebar();
     actions.toggleSidebar?.();
   });
 
-  pauseBtn.addEventListener('click', () => actions.pause?.());
-  resumeBtn.addEventListener('click', () => actions.resume?.());
-  restartBtn.addEventListener('click', () => actions.restart?.());
+  listen(pauseBtn, 'click', () => actions.pause?.());
+  listen(resumeBtn, 'click', () => actions.resume?.());
+  listen(restartBtn, 'click', () => actions.restart?.());
 
   // ---------- 事件绑定：侧栏 ----------
   host.querySelectorAll('.ms-mode').forEach((btn) => {
-    btn.addEventListener('click', () => actions.selectMode?.(btn.dataset.mode));
+    listen(btn, 'click', () => actions.selectMode?.(btn.dataset.mode));
   });
 
-  customApply.addEventListener('click', () => {
+  listen(customApply, 'click', () => {
     actions.applyCustom?.(Number(customRows.value), Number(customCols.value), Number(customMines.value));
   });
 
-  toggle.addEventListener('change', () => {
+  listen(toggle, 'change', () => {
     actions.toggleAntiGuess?.(toggle.checked);
   });
 
@@ -219,18 +314,18 @@ export function createUI(host, deps) {
   function updateAgRegionDisabled() {
     agRegionAttempts.disabled = agMethod.value !== 'advanced';
   }
-  agMethod.addEventListener('change', () => {
+  listen(agMethod, 'change', () => {
     updateAgRegionDisabled();
     actions.setAntiGuessMethod?.(agMethod.value);
   });
-  agMaxAttempts.addEventListener('change', () => {
+  listen(agMaxAttempts, 'change', () => {
     actions.setMaxAttempts?.(Number(agMaxAttempts.value));
   });
-  agRegionAttempts.addEventListener('change', () => {
+  listen(agRegionAttempts, 'change', () => {
     actions.setMaxRegionAttempts?.(Number(agRegionAttempts.value));
   });
 
-  leaderboardOpen.addEventListener('click', () => actions.openLeaderboard?.());
+  listen(leaderboardOpen, 'click', () => actions.openLeaderboard?.());
 
   // ---------- 事件绑定：横幅 ----------
   function showBanner(msg) {
@@ -240,22 +335,59 @@ export function createUI(host, deps) {
   function hideBanner() {
     banner.classList.add('hidden');
   }
-  bannerClose.addEventListener('click', hideBanner);
+  listen(bannerClose, 'click', hideBanner);
 
   // ---------- 昵称弹窗 ----------
   function showNicknamePrompt() {
+    if (!visible(nicknameModal)) nicknameReturnFocus = document.activeElement;
     if (deps.leaderboard && typeof deps.leaderboard.getLastNickname === 'function') {
       nicknameInput.value = deps.leaderboard.getLastNickname();
     }
     nicknameModal.classList.remove('hidden');
+    syncInert();
+    nicknameInput.focus();
+    nicknameInput.select();
   }
-  nicknameSubmit.addEventListener('click', () => {
+  function closeNickname() {
+    nicknameModal.classList.add('hidden');
+    syncInert();
+    if (activeDialog()) resumeBtn.focus();
+    else restoreFocus(nicknameReturnFocus);
+    nicknameReturnFocus = null;
+  }
+  function submitNickname() {
+    if (!visible(nicknameModal)) return;
     const name = nicknameInput.value.trim();
-    nicknameModal.classList.add('hidden');
+    closeNickname();
     actions.submitNickname?.(name || '玩家');
-  });
-  nicknameCancel.addEventListener('click', () => {
-    nicknameModal.classList.add('hidden');
+  }
+  listen(nicknameSubmit, 'click', submitNickname);
+  listen(nicknameCancel, 'click', closeNickname);
+
+  listen(document, 'keydown', (event) => {
+    const dialog = activeDialog();
+    if (!dialog || event.isComposing) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (dialog === nicknameModal) closeNickname();
+      else actions.resume?.();
+    } else if (event.key === 'Enter' && dialog === nicknameModal && event.target === nicknameInput) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat) submitNickname();
+    } else if (event.key === 'Tab') {
+      const controls = [...dialog.querySelectorAll('input, button')].filter(element => !element.disabled);
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        first?.focus();
+      }
+    }
   });
 
   // ---------- 排行榜面板 ----------
@@ -319,7 +451,7 @@ export function createUI(host, deps) {
         tab.dataset.mode = mode;
         tab.dataset.antiguess = ag;
         tab.textContent = `${MODE_NAMES[mode]}·${ANTI_NAMES[ag]}`;
-        tab.addEventListener('click', () => {
+        listen(tab, 'click', () => {
           current = { mode, ag };
           renderLeaderboard(mode, ag);
         });
@@ -346,11 +478,11 @@ export function createUI(host, deps) {
     renderLeaderboard(current.mode, current.ag);
     leaderboardModal.classList.remove('hidden');
   }
-  leaderboardClose.addEventListener('click', () => {
+  listen(leaderboardClose, 'click', () => {
     leaderboardModal.classList.add('hidden');
   });
   // 点击面板外区域隐藏面板
-  document.addEventListener('click', (e) => {
+  listen(document, 'click', (e) => {
     if (leaderboardModal.classList.contains('hidden')) return;
     // 打开面板的按钮点击会冒泡到这里：忽略它，否则面板会在同一次事件分发内被立即关闭
     if (leaderboardOpen.contains(e.target)) return;
@@ -378,16 +510,60 @@ export function createUI(host, deps) {
     mineCount.textContent = String(n);
   }
   function setTime(ms) {
-    timer.textContent = formatTime(ms);
+    const text = formatTime(ms);
+    if (timer.textContent !== text) timer.textContent = text;
   }
   function setPauseOverlay(visible) {
+    const wasVisible = !pauseOverlay.classList.contains('hidden');
+    if (visible && !wasVisible) pauseReturnFocus = document.activeElement;
     pauseOverlay.classList.toggle('hidden', !visible);
+    syncInert();
+    if (visible && !wasVisible && activeDialog() === pauseOverlay) resumeBtn.focus();
+    if (!visible && wasVisible) {
+      if (!activeDialog()) restoreFocus(pauseReturnFocus);
+      pauseReturnFocus = null;
+    }
   }
   function setAntiGuessActive(active) {
     antiGuessStatus.textContent = active ? '防猜测：开启' : '防猜测：关闭';
   }
   function setCustomError(msg) {
     customError.textContent = msg;
+  }
+
+  function setGameStatus({ state, mode, rows, cols, mines, revealedCount }) {
+    const states = { ready: '准备就绪 · 点击任意格开始', playing: '进行中', paused: '已暂停', won: '胜利！', lost: '踩到地雷，再试一局' };
+    gameMeta.textContent = `${MODE_NAMES[mode] || '自定义'} · ${rows} × ${cols} · ${mines} 雷`;
+    const status = states[state] || '';
+    if (gameStatus.textContent !== status) gameStatus.textContent = status;
+    gameStatus.dataset.state = state;
+    const safeCells = Math.max(1, rows * cols - mines);
+    const revealed = Math.max(0, Math.min(safeCells, revealedCount));
+    gameProgress.max = safeCells;
+    gameProgress.value = revealed;
+    progressText.textContent = `${revealed} / ${safeCells}`;
+    pauseBtn.disabled = state !== 'playing';
+    for (const button of host.querySelectorAll('.ms-mode')) {
+      button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+    }
+  }
+
+  function resetTransient() {
+    const previousFocus = nicknameReturnFocus || pauseReturnFocus;
+    pauseOverlay.classList.add('hidden');
+    nicknameModal.classList.add('hidden');
+    leaderboardModal.classList.add('hidden');
+    nicknameReturnFocus = null;
+    pauseReturnFocus = null;
+    syncInert();
+    restoreFocus(previousFocus);
+  }
+
+  function destroy() {
+    if (destroyed) return;
+    destroyed = true;
+    for (const cleanup of cleanups.splice(0)) cleanup();
+    for (const child of host.children) child.inert = false;
   }
 
   return {
@@ -402,5 +578,8 @@ export function createUI(host, deps) {
     setCustomError,
     setAntiGuessSettings,
     getSidebarOpen,
+    setGameStatus,
+    resetTransient,
+    destroy,
   };
 }
