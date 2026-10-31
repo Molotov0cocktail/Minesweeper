@@ -20,6 +20,8 @@ describe('默认值与常量', () => {
       antiGuessMethod: 'standard',
       maxAttempts: 20,
       maxRegionAttempts: 20,
+      gamepadBindings: { reveal:0, mark:1, menu:2, pause:9, restart:3, focus:11, help:8 },
+      focusView: false,
     });
     expect(LIMITS.maxAttempts).toEqual([1, 200]);
     expect(LIMITS.maxRegionAttempts).toEqual([1, 200]);

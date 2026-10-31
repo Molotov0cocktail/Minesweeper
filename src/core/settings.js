@@ -4,12 +4,15 @@
  *
  * 存储结构（localStorage 中的 JSON 字符串）：
  *   { antiGuess: boolean, antiGuessMethod: 'standard'|'advanced',
- *     maxAttempts: int[1,200], maxRegionAttempts: int[1,200] }
+ *     maxAttempts: int[1,200], maxRegionAttempts: int[1,200],
+ *     gamepadBindings: { [action]: buttonIndex }, focusView: boolean }
  *
  * 读取全字段 sanitize（损坏 JSON / 非对象 / 字段非法 → 回退默认）；
  * update 逐字段校验，非法字段忽略（保留现值）；reset 恢复默认并持久化。
  * storage 抛错（getItem/setItem）时自动降级为内存模式，不崩溃。
  */
+
+import { DEFAULT_GAMEPAD_BINDINGS, isValidGamepadBindings } from './gamepad.js';
 
 export const SETTINGS_KEY = 'minesweeper.settings.v1';
 
@@ -18,6 +21,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   antiGuessMethod: 'standard',  // 'standard' | 'advanced'
   maxAttempts: 20,              // 标准模式最大重置轮数
   maxRegionAttempts: 20,        // 高级模式区域重排次数
+  gamepadBindings: Object.freeze({ ...DEFAULT_GAMEPAD_BINDINGS }),
+  focusView: false,
 });
 
 export const LIMITS = Object.freeze({
@@ -36,11 +41,22 @@ function isWithinLimit(value, key) {
   return Number.isInteger(value) && value >= min && value <= max;
 }
 
+function copySettings(settings) {
+  return { ...settings, gamepadBindings: { ...settings.gamepadBindings } };
+}
+
+function copyField(key, value) {
+  return key === 'gamepadBindings' ? { ...value } : value;
+}
+
 // 字段合法性判断（get 与 update 共用）：仅识别契约中的已知字段
 function isValidField(key, value) {
   switch (key) {
     case 'antiGuess':
+    case 'focusView':
       return typeof value === 'boolean';
+    case 'gamepadBindings':
+      return isValidGamepadBindings(value);
     case 'antiGuessMethod':
       return ANTI_GUESS_METHODS.has(value);
     case 'maxAttempts':
@@ -57,7 +73,7 @@ export function createSettings(storage = globalThis.localStorage) {
 
   function load() {
     if (cache !== null) return cache;
-    cache = { ...DEFAULT_SETTINGS };
+    cache = copySettings(DEFAULT_SETTINGS);
     if (degraded) return cache;
     try {
       const raw = storage.getItem(SETTINGS_KEY);
@@ -71,11 +87,11 @@ export function createSettings(storage = globalThis.localStorage) {
       if (!isPlainObject(parsed)) return cache; // 非对象（数组/字符串/数字）→ 全默认
       for (const key of Object.keys(DEFAULT_SETTINGS)) {
         // 读取 sanitize：非法字段回退默认值
-        cache[key] = isValidField(key, parsed[key]) ? parsed[key] : DEFAULT_SETTINGS[key];
+        cache[key] = copyField(key, isValidField(key, parsed[key]) ? parsed[key] : DEFAULT_SETTINGS[key]);
       }
     } catch {
       degraded = true; // getItem 抛错 → 内存降级
-      cache = { ...DEFAULT_SETTINGS };
+      cache = copySettings(DEFAULT_SETTINGS);
     }
     return cache;
   }
@@ -90,29 +106,32 @@ export function createSettings(storage = globalThis.localStorage) {
   }
 
   function get() {
-    return { ...load() }; // 浅拷贝
+    return copySettings(load());
   }
 
   function update(patch) {
     const current = load();
-    if (!isPlainObject(patch)) return { ...current };
+    if (!isPlainObject(patch)) return copySettings(current);
     let changed = false;
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
       if (!(key in patch)) continue;
       if (!isValidField(key, patch[key])) continue; // 非法字段忽略，保留现值
-      if (current[key] !== patch[key]) {
-        current[key] = patch[key];
+      const unchanged = key === 'gamepadBindings'
+        ? Object.keys(DEFAULT_GAMEPAD_BINDINGS).every(action => current[key][action] === patch[key][action])
+        : current[key] === patch[key];
+      if (!unchanged) {
+        current[key] = copyField(key, patch[key]);
         changed = true;
       }
     }
     if (changed) persist(current); // 有合法变更才写 storage
-    return { ...current };
+    return copySettings(current);
   }
 
   function reset() {
-    cache = { ...DEFAULT_SETTINGS };
+    cache = copySettings(DEFAULT_SETTINGS);
     persist(cache);
-    return { ...cache };
+    return copySettings(cache);
   }
 
   return { get, update, reset };
