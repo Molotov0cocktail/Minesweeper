@@ -4,7 +4,7 @@
 
 手柄按键：[标准布局](https://www.w3.org/TR/gamepad/#remapping)的十字键/左摇杆移动，A / 叉翻开，X / 方块标记，Start 暂停/继续，长按 Y / 三角 800 毫秒重开。暂停时 A 继续，昵称框中 A 提交默认昵称、B / 圆取消。首次连接先松开按键，再按一下识别；非标准布局会显示提示。已覆盖模拟Gamepad验收，不代表每种实体手柄均已实测。
 
-[下载 Windows 安装器](https://gitee.com/Molotov0coaktail/minesweeper/releases/download/v1.4.0/MinesweeperSetup-1.4.0-win.exe)（约70.9 MB）。验收与发布记录见 `doc/tasks/progress.md`。
+[下载 Windows 安装器](https://gitee.com/Molotov0coaktail/minesweeper/releases/download/v1.4.0/MinesweeperSetup-1.4.0-win.exe)（70.9 MB）。2026-10-31已发布，371项测试、双缩放冒烟与32项安装/卸载验收通过，公开附件SHA256校验一致；开发机原game副本已就地更新并验证存档未变。
 
 键盘：先用 Tab 或鼠标聚焦棋盘，方向键移动，Enter / 空格翻开（数字格 chord），F 标记（数字格镜像 chord）；P 暂停/继续，F2 重开。输入框和昵称弹窗内保留正常输入。切出窗口会暂停，返回后手动继续。
 

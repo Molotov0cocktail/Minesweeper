@@ -1,6 +1,7 @@
 # AGENTS.md — Minesweeper 项目工作手册
 
-> **当前版本 1.4.0（2026-10-31）**：标准手柄操作、双向子集推理、可取消Worker首点生成；优先遵守本段及detailed-design顶部v1.4契约。发布与本地更新验收结果见progress.md最新记录。
+> **当前版本 1.4.0（2026-10-31）**：标准手柄操作、双向子集推理、可取消Worker首点生成；优先遵守本段及detailed-design顶部v1.4契约。
+> 已发布 [Gitee v1.4.0](https://gitee.com/Molotov0coaktail/minesweeper/releases/tag/v1.4.0)，371测试/双缩放冒烟/安装E2E32项通过，公开附件HTTP200且SHA256一致。本地D:\Minesweeper\game已真正更新到1.4.0，存档摘要未变；硬件未连接，手柄仅模拟验收。
 
 ### v1.4.0 维护速查
 
@@ -419,7 +420,7 @@ npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperS
 #   发布后验证（公开 API，无需令牌）：
 #   curl https://gitee.com/api/v5/repos/Molotov0coaktail/minesweeper/releases
 #   首个 Release：v1.2.0（2026-08-04，含排行榜修复；发布流程经实测稳定，含 3 个踩坑修复）
-#   最新 Release：v1.3.0（2026-10-31，80条新回归；键盘/DPR/性能/对局反馈/数据与安装器样式修复）
+#   最新 Release：v1.4.0（2026-10-31，手柄/Worker生成/双向推理/本地程序就地更新；371用例、E2E32/32）
 ```
 
 ## 7. 测试约定
