@@ -11,13 +11,16 @@
 |T23 UI 状态/焦点/样式|✅|41/41；禁用触发点焦点恢复追加红→绿|
 |T24 leaderboard 数据边界|✅|27/27；同分契约同步旧测试，未放宽断言|
 |T25 main 键盘/DPR/性能|✅|11/11；真实窗口截图复核后补实际布局与滚动回归|
-|T26 集成/打包/发布|🟨|全量21文件312/312，普通与2倍缩放Electron冒烟绿；dist唯一70.9MB；安装E2E32/32；待最终发布|
+|T26 集成/打包/发布|✅|全量21文件312/312，双缩放Electron冒烟绿；dist唯一70.9MB；安装E2E32/32；v1.3.0已发布并公开下载校验|
 
 - 2026-10-31 文档链先行；新增严格回归初跑52条中43红，main旧模块无DOM根节点导入崩溃，smoke初跑14红；实现由模块subagent完成，主agent审阅。
 - 本轮新增80条用例；额外复现并修复：安装器共享样式漏白名单、禁用暂停按钮焦点恢复、实际窗口提示被挤出视区、Electron脚本require.main差异（冒烟入口补回归）。
 - 真窗口SMOKE_RESULT：无console错误/警告、无failLoad/rendererGone，6项交互全true；DPR=2再次通过。未改动求解算法及持久化键。
 - npm run dist 成功：唯一 MinesweeperSetup-1.3.0-win.exe，74,352,011字节；app.asar实际检查 styles/main.css 与 setup/wizard.css 均存在。
 - 安装E2E32/32：静默安装、安装副本启动、移动目录与InstallLocation自愈、静默卸载、GUI卸载及外来文件保留均通过。验收前备份原卸载注册表，结束后已恢复；没有动现有game安装目录。
+- T21/T22/T24/T23/T25/T26各任务独立提交并push origin/main；发布提交5fac1f1，tag v1.3.0已推送，scripts/publish-release.cjs成功，Release ID=1258883。
+- 公开API找到v1.3.0，附件下载HTTP200、74,352,011字节；SHA256=e51383e7d6f322b524b512a242346372bdb79b70a2b82f70c974a2b3cf7383f5，与本地产物一致。
+- .build、截图、验收注册表备份及本次TEMP目录已可恢复地移入回收站；D:\MinesweeperE2E*无残留；dist仅保留新版安装器。未提交凭据/用户数据/产物。
 
 
 > 全流程唯一进度源。主 agent 负责维护；subagent 完成一个任务后更新。
@@ -59,9 +62,9 @@ v3:  T14 文档链+任务文件（主 agent，W0）
 | T7 | core/settings.js 设置持久化 | 无 | ✅ | `npx vitest run tests/settings.test.js` | v2 Wave A，14/14 |
 | T8 | core/installer.js 安装/卸载纯逻辑 | 无 | ✅ | `npx vitest run tests/installer.test.js` | v2 Wave A，43/43（含主 agent 修正测试假数据 1 处） |
 | T9 | solve.js 重构 deduce + 高级局部重排 | T1+T2 | ✅ | `npx vitest run tests/solve.test.js tests/solve.retries.test.js tests/solve.advanced.test.js` | v2 Wave A，24/24（主 agent 补候选循环预算检查） |
-| T10 | core/game.js 防猜测配置集成+回退 | T9 | ⬜ | `npx vitest run tests/game.test.js tests/game.advanced.test.js` | v2 Wave B |
-| T11 | electron 主进程（preload/IPC/runner/log + 冒烟更新） | T8 | ⬜ | node --check + 冒烟 | v2 Wave B |
-| T12 | renderer 侧栏+面板+安装向导+美化 | T7+T10+T11 | ⬜ | `npx vitest run tests/ui.test.js tests/ui.sidebar.test.js` + 冒烟 | v2 Wave C |
+| T10 | core/game.js 防猜测配置集成+回退 | T9 | ✅ | `npx vitest run tests/game.test.js tests/game.advanced.test.js` | v2 Wave B已完成，2026-10-31校正旧状态 |
+| T11 | electron 主进程（preload/IPC/runner/log + 冒烟更新） | T8 | ✅ | node --check + 冒烟 | v2 Wave B已完成，后续v3验收覆盖 |
+| T12 | renderer 侧栏+面板+安装向导+美化 | T7+T10+T11 | ✅ | `npx vitest run tests/ui.test.js tests/ui.sidebar.test.js` + 冒烟 | v2 Wave C已完成，后续v3验收覆盖 |
 | T13 | 打包 dir/zip + 全量验证 + README + AGENTS.md | 全部 | ✅ | `npm test` 205/205 + 冒烟 + `npm run dist` + E2E 20/20 | v2 Wave D |
 | T14 | **v3 文档链 + 任务文件 t15~t20 + progress** | 无 | ✅ | 文档一致性自查 | v3 W0（主 agent） |
 | T15 | setup UI（setup/ui.js + wizard.css + index.html） | 无 | ✅ | `npx vitest run tests/setup.ui.test.js` 17/17 | v3 Wave A |

@@ -1,6 +1,7 @@
 # AGENTS.md — Minesweeper 项目工作手册
 
 > **当前版本 1.3.0（2026-10-31）**：质量/键盘/高分屏体验升级。最新接口增量见下文及 detailed-design.md 顶部 v1.3.0 契约；旧版本运行日志保留作历史。
+> 已发布 [Gitee v1.3.0](https://gitee.com/Molotov0coaktail/minesweeper/releases/tag/v1.3.0)，公开附件HTTP200且SHA256与本地一致；312测试、双缩放冒烟、安装E2E32/32均通过。
 
 ### v1.3.0 维护速查（优先于下文旧概述）
 
@@ -398,6 +399,7 @@ npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperS
 #   发布后验证（公开 API，无需令牌）：
 #   curl https://gitee.com/api/v5/repos/Molotov0coaktail/minesweeper/releases
 #   首个 Release：v1.2.0（2026-08-04，含排行榜修复；发布流程经实测稳定，含 3 个踩坑修复）
+#   最新 Release：v1.3.0（2026-10-31，80条新回归；键盘/DPR/性能/对局反馈/数据与安装器样式修复）
 ```
 
 ## 7. 测试约定
