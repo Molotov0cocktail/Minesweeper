@@ -7,6 +7,8 @@ import { createSettings } from '../core/settings.js';
 import { CELL_REVEALED, CELL_FLAGGED, CELL_QUESTIONED } from '../core/board.js';
 import { drawBoard } from './render.js';
 import { createUI, formatTime } from './ui.js';
+import { startGamepad } from './gamepad.js';
+import { createGenerationClient } from './generation-client.js';
 
 const MIN_CELL = 16;
 const MAX_CELL = 48;
@@ -14,7 +16,12 @@ const SIDEBAR_WIDTH = 248;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 /** 启动一个游戏界面；destroy 清理计时器、监听器并恢复原来的棋盘容器。 */
-export function startApp({ host = globalThis.document?.getElementById('app'), storage = globalThis.localStorage } = {}) {
+export function startApp({
+  host = globalThis.document?.getElementById('app'),
+  storage = globalThis.localStorage,
+  generationClient,
+  gamepadFactory = startGamepad,
+} = {}) {
   const canvas = host?.querySelector('#board-canvas');
   const boardWrap = host?.querySelector('#board-wrap');
   const scaleHandle = host?.querySelector('#scale-handle');
@@ -23,6 +30,10 @@ export function startApp({ host = globalThis.document?.getElementById('app'), st
   const originalChildren = [...host.childNodes];
   const leaderboard = createLeaderboard(storage);
   const settings = createSettings(storage);
+  const client = generationClient === undefined
+    ? (typeof globalThis.Worker === 'function' ? createGenerationClient() : null)
+    : generationClient;
+  const prepareBoard = typeof client?.prepare === 'function' ? client.prepare.bind(client) : undefined;
   const cleanups = [];
   let destroyed = false;
   let game = null;
@@ -30,6 +41,8 @@ export function startApp({ host = globalThis.document?.getElementById('app'), st
   let pendingScore = null;
   let selection = { row: 0, col: 0 };
   let drag = null;
+  let background = false;
+  let focused = true;
 
   function listen(target, type, handler) {
     target.addEventListener(type, handler);
@@ -153,11 +166,20 @@ export function startApp({ host = globalThis.document?.getElementById('app'), st
   }
 
   function newGame(config) {
+    // 先让旧对局失效，再拒绝旧 Worker 请求，防止取消被当作普通生成失败回退。
+    game?.cancelGeneration?.();
+    client?.cancel();
     const currentSettings = settings.get();
-    game = createGame({ ...config, ...currentSettings });
+    game = createGame({ ...config, ...currentSettings }, prepareBoard ? { prepareBoard } : {});
+    const currentGame = game;
     game.on('win', onWin);
     game.on('lose', render);
     game.on('warning', warning => { if (!destroyed) ui.showBanner(warning); });
+    game.on('generated', () => {
+      if (destroyed || game !== currentGame) return;
+      if ((background || document.hidden) && game.state === STATE.PLAYING) actions.pause();
+      fitToWindow();
+    });
     pendingScore = null;
     selection = { row: 0, col: 0 };
     drag = null;
@@ -250,6 +272,53 @@ export function startApp({ host = globalThis.document?.getElementById('app'), st
 
   function hasModal() { return visible('pause-overlay') || visible('nickname-modal'); }
 
+  function isTextInput(target) {
+    return !!target?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+  }
+
+  function moveSelection(rowDelta, colDelta) {
+    selection.row = clamp(selection.row + rowDelta, 0, game.rows - 1);
+    selection.col = clamp(selection.col + colDelta, 0, game.cols - 1);
+    updateSelection();
+    focusMarker.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }
+
+  function controllerEnabled() {
+    if (destroyed || background || document.hidden) return false;
+    // 昵称输入框保留 A/B 提交与取消；普通设置输入框中不接管手柄。
+    return visible('nickname-modal') || !isTextInput(document.activeElement);
+  }
+
+  function handleController(action) {
+    if (!controllerEnabled()) return;
+    if (visible('nickname-modal')) {
+      if (action === 'reveal') host.querySelector('#nickname-submit').click();
+      else if (action === 'cancel') host.querySelector('#nickname-cancel').click();
+      return;
+    }
+    if (visible('pause-overlay')) {
+      if (action === 'reveal' || action === 'pause') actions.resume();
+      return;
+    }
+    if (action === 'cancel') {
+      if (visible('leaderboard-modal')) host.querySelector('#leaderboard-close').click();
+      else if (ui.getSidebarOpen()) host.querySelector('#sidebar-toggle').click();
+      return;
+    }
+    const directions = { up: [-1, 0], down: [1, 0], left: [0, -1], right: [0, 1] };
+    if (directions[action]) {
+      canvas.focus({ preventScroll: true });
+      moveSelection(...directions[action]);
+    } else if (action === 'reveal' || action === 'mark') {
+      canvas.focus({ preventScroll: true });
+      operateCell(selection, action === 'mark');
+    } else if (action === 'pause') actions.pause();
+    else if (action === 'restart') {
+      actions.restart();
+      canvas.focus({ preventScroll: true });
+    }
+  }
+
   function operateCell(pos, mark) {
     const cell = game.board.cells[pos.row * game.cols + pos.col];
     if (mark) {
@@ -290,8 +359,7 @@ export function startApp({ host = globalThis.document?.getElementById('app'), st
 
   listen(document, 'keydown', event => {
     if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
-    const target = event.target;
-    if (target?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+    if (isTextInput(event.target)) return;
     const key = event.key.toLowerCase();
     if (hasModal()) {
       // 暂停遮罩仅允许 P 继续；昵称弹窗等其他情形不接管游戏快捷键。
@@ -312,10 +380,7 @@ export function startApp({ host = globalThis.document?.getElementById('app'), st
     const arrows = { arrowup: [-1, 0], arrowdown: [1, 0], arrowleft: [0, -1], arrowright: [0, 1] };
     if (arrows[key]) {
       event.preventDefault();
-      selection.row = clamp(selection.row + arrows[key][0], 0, game.rows - 1);
-      selection.col = clamp(selection.col + arrows[key][1], 0, game.cols - 1);
-      updateSelection();
-      focusMarker.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      moveSelection(...arrows[key]);
     } else if (key === 'enter' || key === ' ' || key === 'f') {
       event.preventDefault();
       if (!event.repeat) operateCell(selection, key === 'f');
@@ -341,11 +406,16 @@ export function startApp({ host = globalThis.document?.getElementById('app'), st
   for (const details of host.querySelectorAll('#controls-help details')) listen(details, 'toggle', fitToWindow);
 
   function pauseInBackground() {
+    background = true;
     drag = null;
     if (game.state === STATE.PLAYING) actions.pause();
   }
-  listen(window, 'blur', pauseInBackground);
-  listen(document, 'visibilitychange', () => { if (document.hidden) pauseInBackground(); });
+  listen(window, 'blur', () => { focused = false; pauseInBackground(); });
+  listen(window, 'focus', () => { focused = true; background = Boolean(document.hidden); });
+  listen(document, 'visibilitychange', () => {
+    if (document.hidden) pauseInBackground();
+    else background = !focused;
+  });
 
   const initialSettings = settings.get();
   ui.setAntiGuessSettings(settingsToUi(initialSettings));
@@ -355,11 +425,20 @@ export function startApp({ host = globalThis.document?.getElementById('app'), st
   const timer = setInterval(() => {
     if (!destroyed) ui.setTime(game.getElapsedMs());
   }, 200);
+  const stopGamepad = gamepadFactory({
+    onAction: handleController,
+    onStatus(status) { if (!destroyed) ui.setControllerStatus(status); },
+    isEnabled: controllerEnabled,
+  });
 
   return {
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      game?.cancelGeneration?.();
+      client?.cancel();
+      client?.destroy();
+      stopGamepad?.();
       clearInterval(timer);
       for (const cleanup of cleanups) cleanup();
       ui.destroy();
