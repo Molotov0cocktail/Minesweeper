@@ -3,9 +3,40 @@ const DEAD_ZONE = 0.35;
 const NAV_DELAY_MS = 300;
 const NAV_REPEAT_MS = 100;
 const RESTART_HOLD_MS = 800;
-const EDGE_BUTTONS = [[0, 'reveal'], [2, 'mark'], [1, 'cancel'], [9, 'pause']];
+export const DEFAULT_GAMEPAD_BINDINGS = Object.freeze({
+  reveal: 0,
+  mark: 1,
+  menu: 2,
+  pause: 9,
+  restart: 3,
+  focus: 11,
+  help: 8,
+});
+const BINDING_ACTIONS = Object.keys(DEFAULT_GAMEPAD_BINDINGS);
 const DIRECTION_BUTTONS = [[12, 'up'], [13, 'down'], [14, 'left'], [15, 'right']];
-const BOUND_BUTTONS = [0, 1, 2, 3, 9, 12, 13, 14, 15];
+
+export function isValidGamepadBindings(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value) ||
+      Reflect.ownKeys(value).length !== BINDING_ACTIONS.length) return false;
+  const buttons = new Set();
+  for (const action of BINDING_ACTIONS) {
+    if (!Object.hasOwn(value, action)) return false;
+    const button = value[action];
+    if (!Number.isInteger(button) || button < 0 || button > 11 || buttons.has(button)) return false;
+    buttons.add(button);
+  }
+  return true;
+}
+
+export function rebindGamepad(bindings, action, button) {
+  const result = { ...bindings };
+  if (!isValidGamepadBindings(bindings) || !BINDING_ACTIONS.includes(action) ||
+      !Number.isInteger(button) || button < 0 || button > 11) return result;
+  const occupied = BINDING_ACTIONS.find(key => bindings[key] === button);
+  if (occupied && occupied !== action) result[occupied] = bindings[action];
+  result[action] = button;
+  return result;
+}
 
 function isPressed(pad, index) {
   const button = Array.isArray(pad.buttons) ? pad.buttons[index] : null;
@@ -24,7 +55,8 @@ function directionOf(pad) {
   return y < 0 ? 'up' : 'down';
 }
 
-export function createGamepadMapper() {
+export function createGamepadMapper({ bindings = DEFAULT_GAMEPAD_BINDINGS } = {}) {
+  let currentBindings = { ...(isValidGamepadBindings(bindings) ? bindings : DEFAULT_GAMEPAD_BINDINGS) };
   let device = null;
   let armed = false;
   let previousButtons = new Set();
@@ -41,6 +73,15 @@ export function createGamepadMapper() {
     repeatAt = 0;
     restartSince = null;
     restarted = false;
+  }
+
+  function setBindings(next) {
+    if (!isValidGamepadBindings(next) || BINDING_ACTIONS.every(action => next[action] === currentBindings[action])) {
+      return false;
+    }
+    currentBindings = { ...next };
+    reset();
+    return true;
   }
 
   function poll(gamepads, now, enabled = true) {
@@ -70,7 +111,8 @@ export function createGamepadMapper() {
       reset();
       device = identity;
     }
-    const buttons = new Set(BOUND_BUTTONS.filter(index => isPressed(pad, index)));
+    const boundButtons = [...Object.values(currentBindings), ...DIRECTION_BUTTONS.map(([index]) => index)];
+    const buttons = new Set(boundButtons.filter(index => isPressed(pad, index)));
     const direction = directionOf(pad);
     if (!armed) {
       // 插入设备、切回窗口或退出输入框后，都先等摇杆与绑定键回中立。
@@ -88,15 +130,18 @@ export function createGamepadMapper() {
       repeatAt = time + NAV_REPEAT_MS;
     }
     previousDirection = direction;
-    for (const [button, action] of EDGE_BUTTONS) {
+    for (const action of BINDING_ACTIONS) {
+      if (action === 'restart') continue;
+      const button = currentBindings[action];
       if (buttons.has(button) && !previousButtons.has(button)) status.actions.push(action);
     }
 
-    if (!buttons.has(3)) {
+    const restartButton = currentBindings.restart;
+    if (!buttons.has(restartButton)) {
       restartSince = null;
       restarted = false;
     } else {
-      if (!previousButtons.has(3)) restartSince = time;
+      if (!previousButtons.has(restartButton)) restartSince = time;
       if (!restarted && restartSince !== null && time - restartSince >= RESTART_HOLD_MS) {
         status.actions.push('restart');
         restarted = true;
@@ -106,5 +151,5 @@ export function createGamepadMapper() {
     return status;
   }
 
-  return { poll, reset };
+  return { poll, reset, setBindings };
 }

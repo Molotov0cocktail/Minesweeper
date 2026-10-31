@@ -3,7 +3,7 @@ import { createGamepadMapper } from '../src/core/gamepad.js';
 const pad=(pressed=[],axes=[0,0],more={})=>({id:'测试手柄',index:0,mapping:'standard',connected:true,axes,buttons:Array.from({length:16},(_,i)=>({pressed:pressed.includes(i),value:pressed.includes(i)?1:0})),...more});
 function armed(){const m=createGamepadMapper();m.poll([pad()],0);return m;}
 describe('标准手柄映射',()=>{
- it.each([[0,'reveal'],[2,'mark'],[1,'cancel'],[9,'pause'],[12,'up'],[13,'down'],[14,'left'],[15,'right']])('%s按键对应%s，仅按下边沿触发',(button,action)=>{
+ it.each([[0,'reveal'],[1,'mark'],[2,'menu'],[8,'help'],[11,'focus'],[9,'pause'],[12,'up'],[13,'down'],[14,'left'],[15,'right']])('%s按键对应%s，仅按下边沿触发',(button,action)=>{
   const m=armed();expect(m.poll([pad([button])],1).actions).toEqual([action]);
   expect(m.poll([pad([button])],2).actions).toEqual([]);
   m.poll([pad()],3);expect(m.poll([pad([button])],4).actions).toEqual([action]);

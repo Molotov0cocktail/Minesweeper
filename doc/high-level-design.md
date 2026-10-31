@@ -1,5 +1,10 @@
 # 高层设计 high-level-design.md
 
+## v1.5.0 架构增量
+
+core/gamepad提供默认键位、严格校验与交换重映射；settings新增gamepadBindings/focusView并深复制。轮询层从getBindings动态读取，改变后重置中立锁。renderer/controller-ui.js封装控件焦点导航/数值及选项调整；ui.js决定当前作用域（模态/页面/排行榜/侧栏），主装配先委托UI，未消费的动作才操作棋盘。说明和键位页与棋盘互斥；专注视图由CSS+UI状态管理，main负责持久化/适配。保持Worker和求解接口不变。
+
+
 ## v1.4.0 架构增量
 
 core/gamepad.js为纯输入状态机，renderer/gamepad.js负责RAF轮询与清理；main将语义动作路由至现有game动作/模态确认。renderer/generation-client.js管理可取消的Worker请求/8秒超时，generation-worker.js调用原纯求解器并统一标准/高级回退结果。game通过opts.prepareBoard注入Promise生成器，保留未注入时原同步API；GENERATING状态及世代令牌守卫异步结果，零DOM/Worker依赖。main新局/销毁取消Worker和旧Game。UI显示手柄状态与生成状态。

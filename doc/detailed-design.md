@@ -1,5 +1,19 @@
 # 详细设计 detailed-design.md
 
+## v1.5.0 契约增量（优先于旧描述）
+
+1. core/gamepad.js新增DEFAULT_GAMEPAD_BINDINGS=Object.freeze({reveal:0,mark:1,menu:2,pause:9,restart:3,focus:11,help:8})，isValidGamepadBindings(value)要求恰含全部7个已知动作、0~11互异整数；rebindGamepad(bindings,action,button)返回新完整map，重复键交换原占用动作，非法输入返回原map拷贝。createGamepadMapper({bindings}={})新增setBindings(map)，有效改变才reset中立锁；poll的动作映射由配置决定，restart绑定键仍800ms，方向固定。旧cancel语义由mark在UI作用域实现，保留UI cancel别名供旧调用。
+2. renderer/gamepad.js startGamepad新增getBindings可选，默认DEFAULT；每帧发现实际map变化时setBindings，更新期间不产生按住键动作。settings.DEFAULT_SETTINGS新增gamepadBindings（独立默认map）/focusView:false；读损坏map回退完整默认，update非法map忽略，其余字段照旧；get/update/reset返回深复制map，调用方不能修改缓存/默认常量。旧档无需迁移键名。
+3. renderer/controller-ui.js导出navigateControls(scope,action)->boolean。支持up/down/left/right/reveal，scope内可见、非disabled、非inert控件；导航焦点并scrollIntoView(nearest)，范围循环；select左右调选项并change，number左右按step且钳制min/max并input/change，checkbox左右设置/A切换，按钮A点击。未知动作false；空scope安全返回。data-controller-grid="N"的键盘按N列上下导航；越过首/末行时进入网格前/后的控件，不能把焦点困在键盘中。
+4. createUI新增handleController(action)->boolean、hasControllerContext()->boolean、showHelp()/showControls()/closePage()、setGamepadBindings(map)、setFocusView(bool)/getFocusView()。动作优先模态→说明/键位页→榜单→侧栏；UI消费后不翻格。menu开合侧栏并聚焦可用首控件，mark/cancel在界面返回/关闭，reveal确定；暂停模态reveal/mark/pause继续。help打开说明，focus切换专注（模态内不切）。菜单打开时退出专注；页面打开时收起侧栏并隐藏棋盘/summary。所有页面返回可聚焦棋盘。
+5. DOM保留既有id，新增#help-open/#help-page/#help-back，#controls-open/#controls-page/#controls-back，#binding-reveal/mark/menu/pause/restart/focus/help，#bindings-reset；#controller-status/#controls-help/#ag-settings-hint仅位于隐藏的说明/键位专页，主棋盘无教程。键位select onchange调用actions.setGamepadBinding(action,button)，重置调用resetGamepadBindings；setGamepadBindings原位更新选项，不替换正在聚焦控件。页内“返回”可点击/手柄，数字设置左右调整、复选框确认切换。
+6. 昵称显示时仍默认聚焦物理输入框；首个手柄动作显示#nickname-keyboard，方向可选屏幕按键（data-key="a"等字母/数字、space/backspace/clear/player），A按键插入/替换当前选区并限长16。输入框聚焦时A提交默认昵称；B(mark)取消。键盘只在昵称模态中可见，关闭/复位隐藏；Tab焦点陷阱包含实际可见控件。
+7. #focus-toggle和#focus-exit，body.focus-view时顶栏/侧栏/说明/规格行隐藏，仅棋盘、progress与#focus-hud（#focus-mine-count/#focus-timer）和退出按钮可见；setMineCount/setTime同时更新HUD。setFocusView触发UI布局并使隐藏侧栏inert。用户按钮切换通知actions.setFocusView(bool)，main写settings并fitToWindow。专注恢复不重置对局、计时或Worker；F10切换，F1说明，Escape通过UI返回，专注里Escape退出。
+8. main接入getBindings，初始化回填/持久化重映射与专注；controllerEnabled在UI可编辑作用域允许输入框，失焦依旧禁用；handleController先ui.handleController，未消费才board动作。默认B为mark；UI输入不泄漏到棋盘。旧主页面帮助高度回归改为隐藏说明页不占棋盘空间，添加完整作用域/专注/持久化回归。
+9. smoke必须通过app.exit(exitCode)明确控制Electron退出码，不能仅process.exitCode+app.quit（实际失败仍可能退出0）；增加成功/失败Electron入口契约测试。虚拟键盘横向越界同样进入前/后控件；菜单切难度resetTransient无模态焦点时不得偷回棋盘。
+10. 手柄不能遗留“只能鼠标拖动”的缩放操作：侧栏新增#board-size选择0=自动、16~48整数像素，调用actions.setBoardSize(size)，UI新增setBoardSize(size)原位回填。main维护本局preferredCellSize，自动时按窗口适配，指定后固定大小允许滚动，手柄关闭侧栏不重置；鼠标拖动同步偏好，换局恢复自动。暂停/昵称不再用段落重复解释常识。
+
+
 ## v1.4.0 契约增量（优先于旧描述）
 
 1. core/gamepad.js导出 createGamepadMapper() -> {poll(gamepads,now,enabled=true),reset()}。poll返回{connected,supported,id,actions:string[]}，选择最低index的connected standard手柄；仅非标准手柄时connected=true/supported=false。动作up/down/left/right/reveal/mark/cancel/pause/restart，映射buttons12~15/axes0~1、0/2/1/9/3。新设备或禁用后必须所有绑定键及导航中立才能armed。方向优先十字键，摇杆取主轴，死区≤0.35；初次一次、延迟300ms、每100ms至多一次；动作按下边沿一次；restart持有800ms仅触发一次。缺失/非法数组/API/非有限轴安全处理。
