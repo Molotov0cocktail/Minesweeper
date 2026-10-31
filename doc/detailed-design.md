@@ -1,3 +1,26 @@
+# v1.6.0 契约（优先于历史章节）
+
+## 显示
+- 格子大小为有限安全整数，最小16；不设固定产品上限。自动适配取真实可用宽高比的较小值并向下取整，手动拖动保留原有3像素/级比例。拒绝NaN/Infinity/非法值。
+- #board-size保留自动与16~48常用项；大尺寸动态加入且不积累旧动态项。超过窗口可滚动，侧栏/专注切换和resize不重置手动尺寸，新局恢复自动。
+
+## 防猜测UI/迁移/调度
+- 删除#ag-method/#ag-max-attempts及对应actions；#ag-region-attempts始终可编辑，范围1~200。setAntiGuessSettings仅回填maxRegionAttempts，帮助说明更新。
+- SETTINGS_KEY不变；antiGuessMethod默认advanced，读取standard迁移为advanced，更新standard忽略。maxAttempts作为历史兼容字段保留，设置/排行榜/手柄绑定其余语义不变。
+- createGame默认advanced；显式standard仅作为旧核心API兼容。局部生成失败不调用标准生成器，保留最后安全布局并发出`防猜测已关闭：局部修复预算耗尽，已切换普通开局`。
+- generateOpening忽略旧method，防猜测始终generateAntiGuessAdvanced；density文案不变；region失败使用上述文案。取消/硬超时逻辑不变。
+
+## 有界约束推理
+- `inferForced(constraints, {maxVariables=20,maxNodes=100000}={}) -> {safe:Set,mines:Set,complete:boolean,nodes:number}`，constraints为`[{cells:number[],mines:number}]`。
+- 相连约束组成一簇，按变量参与约束数量排序搜索，剩余位置不足或已超雷数时剪枝；必须穷尽该簇后才返回共同确定值。超变量/节点预算的簇不返回确定值，complete=false。无解/非法约束安全返回空结论，不抛错。不修改输入，nodes不超过预算。
+- deduce仅在旧NSS/SNS停滞后调用；revealed数字构成约束，不得以真实雷位选择推导结果。使用总雷数减已确定雷数补充全局全安全/全雷规则。公开返回形状不变。
+
+## 局部修复
+- 当最小unknown簇本身不含雷时，不能直接终止修复；按既有排序选第一个含雷簇。孤立安全未知格可能受另一簇歧义限制，修复其它簇后即可推开。
+- 每次生成缓存排序雷位对应的deduce结果，attempts为真实deduce次数<=400；新增cacheHits统计命中，试排总数另限400以免重复布局无限循环。
+- 区域重排仍保留区域外雷位、总雷数及首点3×3安全；非全盘可解但unknown严格减少且簇外unknown不超出原集合时接受，继续下一最小簇。移雷同样要求严格进展及无簇外新歧义。缓存状态始终与基准mineSet一致。
+- 旧精确随机统计仅在算法路径不变时保留；新的预期须由独立约束/布局预言机确认，不按实现输出修改断言。
+
 # 详细设计 detailed-design.md
 
 ## v1.5.1 图标契约
