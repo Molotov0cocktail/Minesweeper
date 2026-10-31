@@ -9,7 +9,7 @@ vm.runInNewContext(readFileSync(new URL('../scripts/smoke.cjs',import.meta.url),
   require:Object.assign(name=>name==='electron'?electron:require(name),{main:null}),
   module:mod, __dirname:new URL('../scripts',import.meta.url).pathname, console, process:{exitCode:0},
 });
-const valid=()=>({consoleLines:[],rendererGone:null,failLoad:null,cells:{canvasExists:true,canvasW:432,canvasH:432,modeButtons:3,hasGetVersion:true,noInstallerApi:true,noInstallerOpenBtn:true,hasSidebarToggle:true,bodyClass:''},checks:{modeFits:true,keyboardMark:true,keyboardReveal:true,pauseRestart:true,sidebar:true,leaderboard:true,workerGeneration:true,controller:true,controllerMenu:true,rebind:true,focusView:true,helpPage:true}});
+const valid=()=>({consoleLines:[],rendererGone:null,failLoad:null,cells:{canvasExists:true,canvasW:432,canvasH:432,modeButtons:3,hasGetVersion:true,noInstallerApi:true,noInstallerOpenBtn:true,hasSidebarToggle:true,bodyClass:''},checks:{modeFits:true,keyboardMark:true,keyboardReveal:true,pauseRestart:true,sidebar:true,leaderboard:true,workerGeneration:true,controller:true,controllerMenu:true,rebind:true,focusView:true,helpPage:true,unboundedZoom:true,localAntiGuess:true}});
 function failures(result){expect(mod.exports.collectSmokeFailures).toBeTypeOf('function');return mod.exports.collectSmokeFailures(result);}
 describe('冒烟失败必须可被CI检测',()=>{
   it.each([0,1])('真实Electron退出接口必须返回检查结果码%s',async code=>{
@@ -48,7 +48,7 @@ describe('冒烟失败必须可被CI检测',()=>{
   it.each(['hasGetVersion','noInstallerApi','noInstallerOpenBtn','hasSidebarToggle'])('preload/DOM 契约 %s 必须满足',key=>{
     const r=valid();r.cells[key]=false;expect(failures(r).length).toBeGreaterThan(0);
   });
-  it.each(['modeFits','keyboardMark','keyboardReveal','pauseRestart','sidebar','leaderboard','workerGeneration','controller','controllerMenu','rebind','focusView','helpPage'])('交互检查 %s 不通过即失败',key=>{
+  it.each(['modeFits','keyboardMark','keyboardReveal','pauseRestart','sidebar','leaderboard','workerGeneration','controller','controllerMenu','rebind','focusView','helpPage','unboundedZoom','localAntiGuess'])('交互检查 %s 不通过即失败',key=>{
     const r=valid();r.checks[key]=false;expect(failures(r).length).toBeGreaterThan(0);
   });
 });

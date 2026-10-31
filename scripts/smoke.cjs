@@ -16,7 +16,7 @@ function collectSmokeFailures(result = {}) {
     if (c[key] !== true) failures.push(`页面接口检查失败：${key}`);
   }
   if (c.bodyClass?.includes('sidebar-open')) failures.push('默认侧栏未收起');
-  for (const key of ['modeFits', 'keyboardMark', 'keyboardReveal', 'pauseRestart', 'sidebar', 'leaderboard', 'workerGeneration', 'controller', 'controllerMenu', 'rebind', 'focusView', 'helpPage']) {
+  for (const key of ['modeFits', 'keyboardMark', 'keyboardReveal', 'pauseRestart', 'sidebar', 'leaderboard', 'workerGeneration', 'controller', 'controllerMenu', 'rebind', 'focusView', 'helpPage', 'unboundedZoom', 'localAntiGuess']) {
     if (result.checks?.[key] !== true) failures.push(`交互检查失败：${key}`);
   }
   return failures;
@@ -80,7 +80,15 @@ async function runSmoke() {
         const leaderboard = !$('leaderboard-modal').classList.contains('hidden');
         $('leaderboard-close').click();
         $('sidebar-toggle').click();
-        return {modeFits, keyboardMark, keyboardReveal, pauseRestart, sidebar, leaderboard};
+        const beforeSize = parseFloat(c.style.width)/9;
+        $('scale-handle').dispatchEvent(new MouseEvent('mousedown',{button:0,clientX:0,clientY:0,bubbles:true}));
+        window.dispatchEvent(new MouseEvent('mousemove',{clientX:300,clientY:0}));window.dispatchEvent(new MouseEvent('mouseup'));
+        const enlarged = parseFloat(c.style.width)/9;
+        const unboundedZoom = enlarged === beforeSize+100 && enlarged > 48 && $('board-size').value === String(enlarged)
+          && c.width === Math.round(parseFloat(c.style.width)*devicePixelRatio);
+        $('board-size').value='0';$('board-size').dispatchEvent(new Event('change'));
+        const localAntiGuess = !$('ag-method') && !$('ag-max-attempts') && !$('ag-region-attempts').disabled;
+        return {modeFits, keyboardMark, keyboardReveal, pauseRestart, sidebar, leaderboard,unboundedZoom,localAntiGuess};
       } finally { Math.random = originalRandom; }
     })()`);
     // 真正启动module Worker，并经浏览器Gamepad轮询模拟输入；不直接调用游戏内部函数。

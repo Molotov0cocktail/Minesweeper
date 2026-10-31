@@ -20,9 +20,9 @@ const CFG = { rows: 5, cols: 5, mines: 3, antiGuess: false, mode: 'custom' };
 const FIRST_IDX = 2 * 5 + 2; // 首点 (2,2)
 
 describe('防猜测配置字段与默认值', () => {
-  it('旧 config（无新字段）→ standard/20/20，零迁移', () => {
+  it('旧 config（无新字段）→ advanced/20/20', () => {
     const game = createGame({ ...CFG, antiGuess: true });
-    expect(game.antiGuessMethod).toBe('standard');
+    expect(game.antiGuessMethod).toBe('advanced');
     expect(game.maxAttempts).toBe(20);
     expect(game.maxRegionAttempts).toBe(20);
     expect(game.antiGuessStats).toBeNull();
@@ -47,7 +47,7 @@ describe('标准模式回归（默认 method）', () => {
 
   it('默认 standard：只调用 generateAntiGuess 并透传 {maxAttempts}，不调高级', () => {
     vi.mocked(generateAntiGuess).mockReturnValue({ ok: true, mineSet: new Set([0, 1, 2]), attempts: 1 });
-    const game = createGame({ ...CFG, mines: 3, antiGuess: true, maxAttempts: 5 });
+    const game = createGame({ ...CFG, mines: 3, antiGuess: true, antiGuessMethod: 'standard', maxAttempts: 5 });
     game.reveal(2, 2);
     expect(vi.mocked(generateAntiGuessAdvanced)).not.toHaveBeenCalled();
     expect(vi.mocked(generateAntiGuess)).toHaveBeenCalledWith(5, 5, 3, FIRST_IDX, { maxAttempts: 5 });
@@ -58,7 +58,7 @@ describe('标准模式回归（默认 method）', () => {
 
   it('retries 文案随 maxAttempts 动态化（"重排 5 次"）', () => {
     vi.mocked(generateAntiGuess).mockReturnValue({ ok: false, reason: 'retries', mineSet: new Set([0, 1, 2]), attempts: 5 });
-    const game = createGame({ ...CFG, mines: 3, antiGuess: true, maxAttempts: 5 });
+    const game = createGame({ ...CFG, mines: 3, antiGuess: true, antiGuessMethod: 'standard', maxAttempts: 5 });
     let warning = null;
     game.on('warning', (w) => (warning = w));
     game.reveal(2, 2);
@@ -103,36 +103,16 @@ describe('高级模式三分支 + 回退', () => {
     expect(game.antiGuessStats.reason).toBe('density');
   });
 
-  it('advanced reason=region + 标准回退 ok → 生效、用回退 mineSet、warning=null', () => {
-    vi.mocked(generateAntiGuessAdvanced).mockReturnValue({
-      ok: false, reason: 'region', mineSet: new Set([0, 1, 2]), attempts: 400, regionAttempts: 399, moves: 0, regions: 1,
-    });
-    vi.mocked(generateAntiGuess).mockReturnValue({ ok: true, mineSet: new Set([3, 4, 5]), attempts: 2 });
-    const game = createGame({ ...CFG, mines: 3, antiGuess: true, antiGuessMethod: 'advanced', maxAttempts: 9 });
-    game.reveal(2, 2);
-    expect(vi.mocked(generateAntiGuess)).toHaveBeenCalledWith(5, 5, 3, FIRST_IDX, { maxAttempts: 9 });
-    expect(game.antiGuessActive).toBe(true);
-    expect(game.warning).toBeNull();
-    expect(game.board.cells[3].isMine).toBe(true);
-    expect(game.board.cells[4].isMine).toBe(true);
-    expect(game.board.cells[5].isMine).toBe(true);
-    expect(game.antiGuessStats.ok).toBe(false);
-    expect(game.antiGuessStats.reason).toBe('region');
-  });
-
-  it('advanced reason=region + 回退 retries → 关闭、文案含配置数字（9 次）', () => {
-    vi.mocked(generateAntiGuessAdvanced).mockReturnValue({
-      ok: false, reason: 'region', mineSet: new Set([0, 1, 2]), attempts: 400, regionAttempts: 399, moves: 0, regions: 1,
-    });
-    vi.mocked(generateAntiGuess).mockReturnValue({ ok: false, reason: 'retries', mineSet: new Set([0, 1, 2]), attempts: 9 });
-    const game = createGame({ ...CFG, mines: 3, antiGuess: true, antiGuessMethod: 'advanced', maxAttempts: 9 });
-    let warning = null;
-    game.on('warning', (w) => (warning = w));
-    game.reveal(2, 2);
-    expect(game.antiGuessActive).toBe(false);
-    expect(game.warning).toBe('防猜测已关闭：重排 9 次仍无法保证无猜');
-    expect(warning).toBe(game.warning);
-    expect(game.board.cells[0].isMine).toBe(true); // 用回退 mineSet 布雷
+  it('默认局部修复耗尽即关闭并保留末次布局，绝不整盘回退', () => {
+    const result={ok:false,reason:'region',mineSet:new Set([0,1,2]),attempts:30,regionAttempts:29,moves:0,regions:1};
+    generateAntiGuessAdvanced.mockReturnValue(result);
+    generateAntiGuess.mockReturnValue({ok:true,mineSet:new Set([3,4,5]),attempts:2});
+    const game=createGame({...CFG,antiGuess:true});let warning;
+    game.on('warning',w=>{warning=w;});game.reveal(2,2);
+    expect(generateAntiGuessAdvanced).toHaveBeenCalled();expect(generateAntiGuess).not.toHaveBeenCalled();
+    expect(game.antiGuessActive).toBe(false);expect(game.warning).toBe('防猜测已关闭：局部修复预算耗尽，已切换普通开局');
+    expect(warning).toBe(game.warning);expect(game.antiGuessStats).toEqual(result);
+    expect(game.board.cells.filter(c=>c.isMine).map(c=>c.idx)).toEqual([0,1,2]);
   });
 
   it('restart 重置 antiGuessStats=null、保留配置', () => {

@@ -36,7 +36,7 @@ function makeClock() {
 }
 
 // 统一配置：5x5 / 3 雷 / 首点 (2,2)=12
-const CFG = { rows: 5, cols: 5, mines: 3, antiGuess: false, mode: 'custom' };
+const CFG = { rows: 5, cols: 5, mines: 3, antiGuess: false, antiGuessMethod: 'standard', mode: 'custom' };
 
 describe('创建与状态机', () => {
   it('初始为 READY，棋盘未布雷，计时 0', () => {

@@ -17,7 +17,7 @@ describe('默认值与常量', () => {
     expect(SETTINGS_KEY).toBe('minesweeper.settings.v1');
     expect(DEFAULT_SETTINGS).toEqual({
       antiGuess: true,
-      antiGuessMethod: 'standard',
+      antiGuessMethod: 'advanced',
       maxAttempts: 20,
       maxRegionAttempts: 20,
       gamepadBindings: { reveal:0, mark:1, menu:2, pause:9, restart:3, focus:11, help:8 },
@@ -97,7 +97,7 @@ describe('update 语义', () => {
     s.update({ maxAttempts: 30 });
     const next = s.update({ maxAttempts: 999, antiGuessMethod: 'hack', maxRegionAttempts: 5 });
     expect(next.maxAttempts).toBe(30);
-    expect(next.antiGuessMethod).toBe('standard');
+    expect(next.antiGuessMethod).toBe('advanced');
     expect(next.maxRegionAttempts).toBe(5);
   });
 
@@ -133,4 +133,12 @@ describe('storage 异常降级', () => {
     const next = s.update({ maxAttempts: 66 });
     expect(next.maxAttempts).toBe(66);
   });
+});
+
+it('旧standard偏好迁移为advanced且保留开关/预算/手柄，不能再设回standard',()=>{
+  const storage=makeStorage(JSON.stringify({antiGuess:false,antiGuessMethod:'standard',maxAttempts:37,maxRegionAttempts:8,focusView:true}));
+  const s=createSettings(storage);
+  expect(s.get()).toMatchObject({antiGuess:false,antiGuessMethod:'advanced',maxAttempts:37,maxRegionAttempts:8,focusView:true});
+  expect(s.update({antiGuessMethod:'standard'}).antiGuessMethod).toBe('advanced');
+  s.update({maxRegionAttempts:9});expect(JSON.parse(storage.setItem.mock.calls.at(-1)[1]).antiGuessMethod).toBe('advanced');
 });

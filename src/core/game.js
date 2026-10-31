@@ -37,7 +37,7 @@ const WARNING_GENERATION = '防猜测已关闭：生成超时或失败，已切�
  * 创建游戏实例。
  * @param {{ rows:number, cols:number, mines:number, antiGuess:boolean, mode:string,
  *           antiGuessMethod?:'standard'|'advanced', maxAttempts?:number, maxRegionAttempts?:number }} config
- *   antiGuessMethod 默认 'standard'；maxAttempts/maxRegionAttempts 默认 20。
+ *   antiGuessMethod 默认 'advanced'；maxAttempts/maxRegionAttempts 默认 20。
  *   新字段均有默认值（旧 config 零迁移），game 不校验/不夹取（有效性由 settings 保证）。
  * @param {{ now?: () => number, prepareBoard?: (config:object, startIdx:number) => Promise<object> }} [opts]
  *   now 可注入假时钟；prepareBoard 可注入可取消的异步首点生成服务。
@@ -64,7 +64,7 @@ class Game {
     this.antiGuess = Boolean(config.antiGuess);
 
     // v2 防猜测配置字段（默认值；restart 保留；game 信任入参，不校验不夹取）
-    this.antiGuessMethod = config.antiGuessMethod ?? 'standard';
+    this.antiGuessMethod = config.antiGuessMethod ?? 'advanced';
     this.maxAttempts = config.maxAttempts ?? 20;
     this.maxRegionAttempts = config.maxRegionAttempts ?? 20;
 
@@ -331,7 +331,7 @@ class Game {
     }
   }
 
-  /** 高级模式：歧义区域重排；失败时回退标准整盘重排，回退也失败则关闭 */
+  /** 局部修复：失败保留末次布局并关闭本局防猜测 */
   #firstRevealAdvanced(safeIdx) {
     const result = generateAntiGuessAdvanced(this.rows, this.cols, this.mines, safeIdx, {
       maxRegionAttempts: this.maxRegionAttempts,
@@ -345,26 +345,11 @@ class Game {
     } else if (result.reason === 'density') {
       // 密度超限：不回退标准模式，直接按 density 分支关闭
       this.#closeForDensity(safeIdx);
-    } else if (result.reason === 'region') {
-      // 区域重排失败：回退标准整盘重排（透传 maxAttempts）
-      const fallback = generateAntiGuess(this.rows, this.cols, this.mines, safeIdx, {
-        maxAttempts: this.maxAttempts,
-      });
-      if (fallback.ok) {
-        // 回退可解：防猜测生效，用回退布局布雷
-        this.antiGuessActive = true;
-        this.warning = null;
-        setMines(this.board, fallback.mineSet);
-      } else if (fallback.reason === 'retries') {
-        // 回退重排耗尽：防猜测关闭，用回退 mineSet 布雷
-        this.#closeForRetries(fallback.mineSet);
-      } else {
-        // 防御：回退其它原因按 density 分支处理
-        this.#closeForDensity(safeIdx);
-      }
     } else {
-      // 防御：高级返回未知原因按 density 分支处理
-      this.#closeForDensity(safeIdx);
+      this.antiGuessActive = false;
+      this.warning = '防猜测已关闭：局部修复预算耗尽，已切换普通开局';
+      setMines(this.board, result.mineSet ?? randomMineSet(this.rows, this.cols, this.mines, safeIdx));
+      this.#emit('warning', this.warning);
     }
   }
 

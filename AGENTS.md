@@ -1,6 +1,19 @@
 # AGENTS.md — Minesweeper 项目工作手册
 
-> **当前版本1.5.1（2026-10-31）**：金属地雷图元、统一应用图标、多尺寸ICO与真实exe资源嵌入。432测试/双缩放12项冒烟/E2E32项通过，本地game已更新且存档摘要不变。
+> **当前版本1.6.0（2026-10-31）**：取消棋盘48px缩放上限，防猜测统一局部修复；有界组合约束推理、重复布局缓存、局部严格进展。456测试/双缩放14项冒烟/E2E32项通过，本地game已更新且存档摘要不变；待公开发布。
+
+### v1.6.0 维护速查（优先于历史契约）
+
+- 自动适配与右下拖动均保留最小16px、取消固定最大值；手动尺寸保留至新局。#board-size动态回显>48尺寸且只保留当前动态项，0恢复自动；DPR/鼠标逻辑坐标分离，过大棋盘由主区域滚动。
+- UI删除#ag-method/#ag-max-attempts及actions.setAntiGuessMethod/setMaxAttempts，仅保留#ag-region-attempts(1~200)。setAntiGuessSettings({maxRegionAttempts})，帮助说明统一局部修复。
+- settings存储键不变，antiGuessMethod默认advanced，旧standard自动迁移advanced，update standard忽略；maxAttempts保留历史兼容，不再暴露。
+- game默认advanced；显式standard仅供旧核心API兼容。Worker忽略旧method并统一局部修复；region失败不再整盘回退，精确文案“防猜测已关闭：局部修复预算耗尽，已切换普通开局”。8秒硬超时/取消契约不变。
+- 新core/constraints.js：inferForced([{cells:number[],mines:number}],{maxVariables=20,maxNodes=100000}={}) -> {safe:Set,mines:Set,complete:boolean,nodes:number}。按共享变量分簇；完整枚举才提交结论，超预算整簇放弃；无解/非法输入空结论。
+- solve.deduce在NSS/SNS停滞后做约束枚举及剩余雷数确定规则，返回形状不变。局部试排及移雷只接受unknown严格减少且无簇外新增歧义的进展。缓存布局，attempts为真实deduce<=400，cacheHits命中统计；候选评估另限400，移雷<=20。
+- 新测试constraints/solve.exact/solve.cache/main.zoom；独立真值表验证确定性，缩放覆盖>256px、DPR及鼠标坐标；smoke增unboundedZoom/localAntiGuess，共14项。
+
+
+> **历史版本1.5.1（2026-10-31）**：金属地雷图元、统一应用图标、多尺寸ICO与真实exe资源嵌入。432测试/双缩放12项冒烟/E2E32项通过，本地game已更新且存档摘要不变。
 > 已发布 [Gitee v1.5.1](https://gitee.com/Molotov0coaktail/minesweeper/releases/tag/v1.5.1)，公开附件HTTP200、74,730,516字节、SHA256与本地一致；Windows实际提取图标已确认新版。
 
 ### v1.5.1 维护速查
@@ -71,20 +84,15 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 - 三种标准模式（初级 9×9/10、中级 16×16/40、高级 16×30/99）+ 自定义行列/雷数
 - **左侧侧栏**（汉堡按钮展开/收起，默认收起）：等级选择/自定义/防猜测设置/排行榜入口
   （v3 起无安装入口）；顶栏保留汉堡/标题/剩余雷数/时间/暂停/重开/横幅；展开时棋盘缩放适配（可用宽扣 248px）
-- 拖动缩放手柄缩放显示（格子 16~48px）、窗口等比自适应
+- 拖动缩放手柄缩放显示（格子最小16px、无固定上限）、窗口等比自适应
 - 经典交互：左键翻开/空区扩散、右键 旗→问号→无、左键数字格 chord、右键数字格镜像 chord
 - 键盘与反馈（v1.3.0）：方向键/Enter/空格/F/P/F2、失焦自动暂停、状态与安全格进度；DPR高清画布、事件重绘、实际布局适配。
-- **防猜测模式**（设置持久化 localStorage `minesweeper.settings.v1`）：
-  - 标准方式（整盘重排）：NSS+SNS 子集推理（`deduce` 暴露不动点未知格/连通簇）检测可解性；
-    不可解则整体重排雷布局（≤ 最大重置轮数，默认 20，可调 1~200）
-  - 高级方式（局部重排）：检测最小歧义连通簇 → 簇外雷固定、簇内重排（次数可调）→
-    仍不可解则簇内减 1 雷移至正常区域（候选验证不引入新猜测）→ 循环；失败回退标准方式
-  - 雷密度 >50% 或重排耗尽时关闭并横幅提醒（精确文案见 §5 game 模块）
+- **防猜测模式**（设置键仍为`minesweeper.settings.v1`）：单格/子集/有界约束枚举判定，最小歧义簇局部重排并保留严格进展，必要时移雷，总雷数和首点3×3安全区不变。区域预算1~200，重复布局缓存；密度>50%或预算/超时耗尽时明确关闭本局防猜测，不再整盘兜底。
 - 正向累加计时 + 暂停遮罩、剩余雷数、重开
 - 排行榜：3 模式 × 防猜测开/关 共 6 组 × 前十名（昵称+用时，按用时升序），
   localStorage 持久化，胜利后输入昵称，按**实际是否无猜**归组；自定义模式不计榜；
   侧栏「排行榜」按钮 → 主页面板展示（非弹窗）
-- **独立便携安装器 MinesweeperSetup v1.5.1**（v3：安装功能从游戏程序剥离，dist 唯一产物）：
+- **独立便携安装器 MinesweeperSetup v1.6.0**（v3：安装功能从游戏程序剥离，dist 唯一产物）：
   - 单文件便携 exe（electron-builder portable，NSIS 压缩约 70MB）；双击未安装=安装向导、
     已安装=卸载确认；`--uninstall` 静默卸载（控制面板 UninstallString 入口）；
     `--install-dir <dir>` 静默安装（附 `--no-desktop-shortcut`/`--no-startmenu-shortcut`）
@@ -172,7 +180,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 ```
 ├── AGENTS.md              本手册
 ├── index.html             入口（含 CSP；仅 #app/#board-wrap/#board-canvas/#scale-handle，控件由 ui.js 生成）
-├── package.json           ESM；version 1.5.1；scripts: start/test/test:watch/icons/dist
+├── package.json           ESM；version 1.6.0；scripts: start/test/test:watch/icons/dist
 ├── assets/                icon.svg源 + minesweeper.png(512) / minesweeper.ico(8尺寸)
 ├── electron/              主进程（CommonJS .cjs，双应用分派）
 │   ├── main.cjs           顶部 IS_SETUP 分派（resources/game-app 存在 或 MINESWEEPER_SETUP=1 → setup.cjs）；
@@ -210,6 +218,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 │   ├── core/              纯 JS 核心逻辑（Node 可单测）
 │   │   ├── modes.js       模式预设 + 自定义参数校验
 │   │   ├── board.js       棋盘模型：布雷/翻开洪泛/chord×2/标记循环/胜负
+│   │   ├── constraints.js # 有界前沿约束求解（完整枚举/分量/预算安全）
 │   │   ├── solve.js       可解性判定（deduce：暴露 unknown/连通簇）+ 防猜测重排（标准/高级局部）
 │   │   ├── gamepad.js     纯标准手柄映射状态机（死区/中立解锁/边沿/重复/长按）
 │   │   ├── game.js        游戏状态机 + 正向计时 + 暂停 + 防猜测调度（标准/高级+回退）
@@ -227,13 +236,13 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 │       ├── generation-client.js Worker生命周期/取消/超时
 │       ├── generation-worker.js Worker生成协议与标准/高级回退
 │       └── main.js        装配：鼠标/缩放/resize/设置持久化接线
-├── tests/                 Vitest 测试（35 个文件，432 用例，先于实现编写；含图标资源/PE契约）
+├── tests/                 Vitest 测试（40 个文件，456 用例，先于实现编写；含图标资源/PE契约）
 ├── doc/                   需求/设计/任务文档（工作流产物，改功能先改这里）
 │   ├── proposal.md        需求提案（含用户决策记录）
 │   ├── high-level-design.md / detailed-design.md
 │   ├── prompt.md          控制 prompt（主 agent/subagent 规则）
 │   └── tasks/             任务文档 + progress.md（唯一进度源）
-└── dist/                  打包产物（gitignore；唯一文件 MinesweeperSetup-1.5.1-win.exe）
+└── dist/                  打包产物（gitignore；唯一文件 MinesweeperSetup-1.6.0-win.exe）
 .build/                    打包 staging（gitignore；剥离版游戏文件，脚本生成）
 .local/                    本地凭据/私有配置（gitignore；.local/gitee-token 发布令牌，严禁入库）
 ```
@@ -278,9 +287,9 @@ generateAntiGuess(rows,cols,mines,startIdx,opts={maxAttempts,maxDensity,rng})
 // -> {ok:true,mineSet,attempts} | {ok:false,reason:'density',mineSet:null,attempts:0}
 //  | {ok:false,reason:'retries',mineSet:<最后一次>,attempts:maxAttempts}
 generateAntiGuessAdvanced(rows,cols,mines,startIdx,opts={maxRegionAttempts,rng})
-// -> {ok, reason?:'density'|'region', mineSet, attempts, regionAttempts, moves, regions}
+// -> {ok, reason?:'density'|'region', mineSet, attempts, regionAttempts, moves, regions, cacheHits}
 // 高级局部重排：最小歧义簇 → 簇外雷固定簇内重排（每轮局部计数）→ 减雷移雷（候选验证
-// (s2.unknown\R)⊆outsideStuck 接受）→ 循环；预算/上限封顶 → reason:'region'（game 负责回退标准）
+// unknown严格减少且(s2.unknown\R)⊆outsideStuck才接受；选首个含雷簇；预算封顶region关闭
 ```
 
 ### core/game.js
@@ -288,7 +297,7 @@ generateAntiGuessAdvanced(rows,cols,mines,startIdx,opts={maxRegionAttempts,rng})
 STATE = { READY:'ready', GENERATING:'generating', PLAYING:'playing', PAUSED:'paused', WON:'won', LOST:'lost' }
 createGame(config, opts={})
 // config:{rows,cols,mines,antiGuess,mode, antiGuessMethod?,maxAttempts?,maxRegionAttempts?}
-//   antiGuessMethod:'standard'|'advanced'(默认 standard)；maxAttempts/maxRegionAttempts 默认 20
+//   antiGuessMethod:'standard'|'advanced'(默认 advanced)；maxAttempts/maxRegionAttempts 默认 20
 // opts:{now?:()=>number, prepareBoard?:(config,startIdx)=>Promise<Opening>}
 game: { state,rows,cols,mines,mode,board,antiGuess,antiGuessActive,warning,
         antiGuessMethod,maxAttempts,maxRegionAttempts,antiGuessStats|null }
@@ -304,8 +313,8 @@ game.on('win'|'lose'|'warning'|'generated', cb)
 // warning 精确文案：
 //   '防猜测已关闭：雷密度过高，无法保证无猜'
 //   `防猜测已关闭：重排 ${maxAttempts} 次仍无法保证无猜`（默认 20）
-// 高级模式调度：advanced ok→生效；reason:'density'→不回退；reason:'region'→回退标准
-// （透传 maxAttempts）；标准 retries → 关闭+横幅
+// 当前局部调度：advanced ok→生效；density/region失败关闭，region不整盘回退
+// 显式standard仅旧核心API兼容；标准retries仍关闭+横幅
 // 操作守卫：READY 可 reveal(首点)/cycleMark；PAUSED/WON/LOST 一切操作 noop
 // 首次 reveal 触发布雷，布雷方式：setMines(board, randomMineSet(...)) 或返回的 mineSet
 // 必须从 solve.js 具名 import generateAntiGuess/generateAntiGuessAdvanced（测试 mock 依赖）
@@ -314,7 +323,7 @@ game.on('win'|'lose'|'warning'|'generated', cb)
 ### core/settings.js（v2）
 ```js
 SETTINGS_KEY = 'minesweeper.settings.v1'
-DEFAULT_SETTINGS = { antiGuess:true, antiGuessMethod:'standard', maxAttempts:20, maxRegionAttempts:20,
+DEFAULT_SETTINGS = { antiGuess:true, antiGuessMethod:'advanced', maxAttempts:20, maxRegionAttempts:20,
                      gamepadBindings:{reveal:0,mark:1,menu:2,pause:9,restart:3,focus:11,help:8}, focusView:false }
 LIMITS = { maxAttempts:[1,200], maxRegionAttempts:[1,200] }
 createSettings(storage=globalThis.localStorage) -> { get()->拷贝, update(patch)->拷贝, reset()->拷贝 }
@@ -375,7 +384,7 @@ createUI(host, deps) -> { setMineCount, setTime, setPauseOverlay, setAntiGuessAc
                           setGamepadBindings, setFocusView, getFocusView, setBoardSize, resetTransient, destroy }
 deps = { leaderboard, getState, actions:{ selectMode, applyCustom, toggleAntiGuess,
                                           pause, resume, restart, submitNickname,
-                                          toggleSidebar, setAntiGuessMethod, setMaxAttempts,
+                                          toggleSidebar,
                                           setMaxRegionAttempts, openLeaderboard, setGamepadBinding,
                                           resetGamepadBindings, setFocusView, setBoardSize } }
 // v2 新增 actions 一律可选链调用（旧测试 deps 无这些键）
@@ -385,7 +394,7 @@ formatTime(ms) -> 'MM:SS'
 //       #warning-banner(+text/close)
 // 侧栏：#sidebar .ms-mode[data-mode=beginner|intermediate|expert]×3
 //       #custom-rows/cols/mines #custom-apply #custom-error
-//       #anti-guess-toggle #antiguess-status #ag-method #ag-max-attempts #ag-region-attempts #ag-settings-hint
+//       #anti-guess-toggle #antiguess-status #ag-region-attempts #ag-settings-hint
 //       #leaderboard-open（v3 无 #installer-open）
 // 主页面板：#leaderboard-modal(ms-panel，非 overlay！)+tabs/body/close/hint
 // 弹窗：#pause-overlay #nickname-modal(+input/submit/cancel)
@@ -445,10 +454,10 @@ npm install   # 国内网络：ELECTRON_MIRROR=https://npmmirror.com/mirrors/ele
 npm start     # 启动游戏。注意：本机 shell 预设 ELECTRON_RUN_AS_NODE=1，需先 unset
               # （unset ELECTRON_RUN_AS_NODE && npm start）
               # 开发态启动安装器：MINESWEEPER_SETUP=1 npm start（调试 setup 向导/卸载界面）
-npm test      # 全量 Vitest（432 用例，全部必须绿）
+npm test      # 全量 Vitest（456 用例，全部必须绿）
 npm run test:watch
 npm run icons # 从assets/icon.svg重建PNG/ICO（dist会自动调用）
-npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperSetup-1.5.1-win.exe；
+npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperSetup-1.6.0-win.exe；
               # 需设上述镜像环境变量；signAndEditExecutable=false；target=portable）
 # 冒烟：unset ELECTRON_RUN_AS_NODE && npx electron scripts/smoke.cjs
 # 输出 SMOKE_RESULT JSON：rendererGone/failLoad 为 null、consoleLines 空、canvasW/H>0、
@@ -491,18 +500,12 @@ npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperS
 > 按影响排序；每条给出建议，实施前须走文档链（proposal → 设计 → 测试先行）。
 > v3 变化：安装/卸载已从游戏剥离为独立便携 MinesweeperSetup（8.3/8.4/8.7 相应更新）。
 
-### 8.1 可解性算法为充分条件启发式（影响：玩法体验）
-- **弱点**：NSS 单格 + SNS 2-集子集推理"判可解必真，判不可解可能高估"——需更复杂推理
-  （3+ 集子集、组合约束）的极限局面会被误判为"需猜测"而触发不必要重排。
-- **建议**：如需要更强的无猜保证，扩展高阶子集推理或引入完整解算器（代价是推导耗时上升，
-  需配预算与缓存）；否则维持现状并在 README 说明近似性。
+### 8.1 有界可解性判定
+- v1.6.0加入组合约束枚举（单簇20变量、单次100000节点），仅完整搜索后提交确定结论，减少旧NSS/SNS误重排。超预算时仍是保守充分条件，不能宣称完整求解任意地图。
 
-### 8.2 高级防猜测模式最坏情况耗时（影响：大棋盘首点延迟）
-- v1.4.0 已移至Worker，首点不阻塞UI；可重开取消，8秒硬超时后普通安全开局并警告。推理邻居表已单次缓存，仍无增量推理/跨布局缓存，不能保证所有局面8秒内生成无猜盘。
-- **弱点**：每次区域重排/候选验证都是整盘 `deduce`（60×60 单次约 10~50ms），
-  最坏场景受 `MAX_TOTAL_DEDUCE=400` 预算兜底，首点延迟可达数秒。
-- **建议**：区域重排后增量重推（仅重算受影响区域的前沿）；同一对局内 deduce 结果缓存；
-  或预算按棋盘规模自适应（小棋盘收紧、大棋盘放宽）。
+### 8.2 大棋盘首点延迟
+- v1.6.0缓存布局推理、保留严格局部进展、跳过无雷歧义簇；候选与真实deduce分别最多400，移雷最多20。固定样本高级中位约25→6ms，60×60两盘最慢约516→91ms；样本不能代表所有地图。
+- Worker首点生成可取消，8秒硬超时后普通安全开局并提示；约束节点预算按每次调用计，可能多轮重入，不能误称整盘仅搜索100000节点。
 
 ### 8.3 游戏运行中卸载依赖延迟清理（影响：卸载体验）
 - **弱点**：v3 已大幅缓解——安装器与游戏分离，卸载游戏目录时 setup 自身无占用；

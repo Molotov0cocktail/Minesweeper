@@ -18,7 +18,7 @@ export const SETTINGS_KEY = 'minesweeper.settings.v1';
 
 export const DEFAULT_SETTINGS = Object.freeze({
   antiGuess: true,              // 防猜测总开关
-  antiGuessMethod: 'standard',  // 'standard' | 'advanced'
+  antiGuessMethod: 'advanced',  // 统一局部修复；旧standard读取时回退到此默认值
   maxAttempts: 20,              // 标准模式最大重置轮数
   maxRegionAttempts: 20,        // 高级模式区域重排次数
   gamepadBindings: Object.freeze({ ...DEFAULT_GAMEPAD_BINDINGS }),
@@ -30,7 +30,7 @@ export const LIMITS = Object.freeze({
   maxRegionAttempts: [1, 200],
 });
 
-const ANTI_GUESS_METHODS = new Set(['standard', 'advanced']);
+const ANTI_GUESS_METHODS = new Set(['advanced']);
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);

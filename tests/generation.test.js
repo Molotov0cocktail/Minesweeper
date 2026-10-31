@@ -7,25 +7,24 @@ import {createGenerationClient,GENERATION_TIMEOUT_MS} from '../src/renderer/gene
 const config={rows:5,cols:5,mines:3,antiGuessMethod:'standard',maxAttempts:7,maxRegionAttempts:9};
 beforeEach(()=>{vi.clearAllMocks();});
 afterEach(()=>{vi.useRealTimers();});
-describe('统一生成协议',()=>{
- it('标准参数透传并序列化Set，不丢防猜测真实状态',()=>{
-  generateAntiGuess.mockReturnValue({ok:true,mineSet:new Set([0,2,3]),attempts:2});
-  const r=generateOpening(config,12);
-  expect(generateAntiGuess).toHaveBeenCalledWith(5,5,3,12,expect.objectContaining({maxAttempts:7}));
+describe('统一局部修复生成协议',()=>{
+ it.each(['standard','advanced',undefined])('旧method=%s均采用局部修复，成功状态与Set序列化正确',method=>{
+  generateAntiGuessAdvanced.mockReturnValue({ok:true,mineSet:new Set([0,2,3]),attempts:2});
+  const r=generateOpening({...config,antiGuessMethod:method},12);
+  expect(generateAntiGuessAdvanced).toHaveBeenCalledWith(5,5,3,12,{maxRegionAttempts:9});
+  expect(generateAntiGuess).not.toHaveBeenCalled();
   expect(r).toMatchObject({mineSet:[0,2,3],antiGuessActive:true,warning:null});
  });
- it('高级region失败才回退标准，密度高直接关闭',()=>{
-  generateAntiGuessAdvanced.mockReturnValue({ok:false,reason:'region',mineSet:new Set([0,1,2]),attempts:20});
-  generateAntiGuess.mockReturnValue({ok:true,mineSet:new Set([0,2,3]),attempts:3});
-  expect(generateOpening({...config,antiGuessMethod:'advanced'},12).antiGuessActive).toBe(true);
-  expect(generateAntiGuessAdvanced).toHaveBeenCalledWith(5,5,3,12,expect.objectContaining({maxRegionAttempts:9}));
-  vi.clearAllMocks();generateAntiGuessAdvanced.mockReturnValue({ok:false,reason:'density',mineSet:null,attempts:0});
-  const r=generateOpening({...config,antiGuessMethod:'advanced'},12);
-  expect(generateAntiGuess).not.toHaveBeenCalled();expect(r).toMatchObject({antiGuessActive:false,warning:'防猜测已关闭：雷密度过高，无法保证无猜',mineSet:[0,1,2]});
+ it('局部预算耗尽保留布局并关闭，不再整盘重排',()=>{
+  generateAntiGuessAdvanced.mockReturnValue({ok:false,reason:'region',mineSet:new Set([0,2,3]),attempts:20});
+  expect(generateOpening(config,12)).toMatchObject({mineSet:[0,2,3],antiGuessActive:false,warning:'防猜测已关闭：局部修复预算耗尽，已切换普通开局'});
+  expect(generateAntiGuess).not.toHaveBeenCalled();
  });
- it('重排耗尽保留末次布局，文案包含实际预算',()=>{
-  generateAntiGuess.mockReturnValue({ok:false,reason:'retries',mineSet:new Set([0,2,3]),attempts:7});
-  expect(generateOpening(config,12)).toMatchObject({mineSet:[0,2,3],antiGuessActive:false,warning:'防猜测已关闭：重排 7 次仍无法保证无猜'});
+ it('密度高直接关闭，普通开局不调用任何求解器',()=>{
+  generateAntiGuessAdvanced.mockReturnValue({ok:false,reason:'density',mineSet:null,attempts:0});
+  expect(generateOpening(config,12)).toMatchObject({antiGuessActive:false,warning:'防猜测已关闭：雷密度过高，无法保证无猜',mineSet:[0,1,2]});
+  vi.clearAllMocks();expect(generateOpening({...config,antiGuess:false},12).antiGuessActive).toBe(false);
+  expect(generateAntiGuess).not.toHaveBeenCalled();expect(generateAntiGuessAdvanced).not.toHaveBeenCalled();
  });
 });
 class FakeWorker {

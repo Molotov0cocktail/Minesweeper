@@ -12,7 +12,6 @@ import { startGamepad } from './gamepad.js';
 import { createGenerationClient } from './generation-client.js';
 
 const MIN_CELL = 16;
-const MAX_CELL = 48;
 const SIDEBAR_WIDTH = 248;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -52,7 +51,7 @@ export function startApp({
   }
 
   function settingsToUi(s) {
-    return { method: s.antiGuessMethod, maxAttempts: s.maxAttempts, maxRegionAttempts: s.maxRegionAttempts };
+    return { maxRegionAttempts: s.maxRegionAttempts };
   }
 
   function clampAttempts(value) {
@@ -170,7 +169,7 @@ export function startApp({
         - otherHeight - gaps - verticalExtras(wrapStyle) - verticalExtras(canvasStyle);
     }
     // 极小窗口仍保留可辨识的格子；主区域可滚动到全部棋盘与提示。
-    cellSize = clamp(Math.floor(Math.min(availableWidth / game.cols, availableHeight / game.rows)), MIN_CELL, MAX_CELL);
+    cellSize = Math.max(MIN_CELL, Math.floor(Math.min(availableWidth / game.cols, availableHeight / game.rows)));
     render();
   }
 
@@ -251,16 +250,6 @@ export function startApp({
       ui.showLeaderboard(result.added ? undefined : '未进入该榜单前 10 名，成绩未上榜');
     },
     toggleSidebar: fitToWindow,
-    setAntiGuessMethod(method) {
-      const value = settings.update({ antiGuessMethod: method });
-      ui.setAntiGuessSettings(settingsToUi(value));
-      game.antiGuessMethod = value.antiGuessMethod;
-    },
-    setMaxAttempts(number) {
-      const value = settings.update({ maxAttempts: clampAttempts(number) });
-      ui.setAntiGuessSettings(settingsToUi(value));
-      game.maxAttempts = value.maxAttempts;
-    },
     setMaxRegionAttempts(number) {
       const value = settings.update({ maxRegionAttempts: clampAttempts(number) });
       ui.setAntiGuessSettings(settingsToUi(value));
@@ -281,7 +270,7 @@ export function startApp({
       fitToWindow();
     },
     setBoardSize(value) {
-      if (!Number.isInteger(value) || (value !== 0 && (value < MIN_CELL || value > MAX_CELL))) return;
+      if (!Number.isSafeInteger(value) || (value !== 0 && value < MIN_CELL)) return;
       preferredCellSize = value === 0 ? null : value;
       fitToWindow();
     },
@@ -420,7 +409,9 @@ export function startApp({
     const dx = event.clientX - drag.x;
     const dy = event.clientY - drag.y;
     const delta = Math.abs(dx) >= Math.abs(dy) ? dx : dy;
-    preferredCellSize = clamp(drag.size + Math.round(delta / 3), MIN_CELL, MAX_CELL);
+    const nextSize = Math.max(MIN_CELL, drag.size + Math.round(delta / 3));
+    if (!Number.isSafeInteger(nextSize)) return;
+    preferredCellSize = nextSize;
     cellSize = preferredCellSize;
     render();
   });
