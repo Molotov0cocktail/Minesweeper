@@ -17,6 +17,7 @@ files:
   - electron/log.cjs
   - src/core/installer.js
   - setup/**
+  - styles/main.css
   - package.json
 extraResources:
   # 内嵌剥离版游戏文件（.build/game-app，由 scripts/build-dist.cjs staging 生成）；

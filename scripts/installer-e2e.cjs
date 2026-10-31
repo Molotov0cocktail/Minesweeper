@@ -246,7 +246,7 @@ function cleanRegistry() {
   }))()`);
   check('GUI 显示卸载确认视图（mode=uninstall）', modeReady === true && view.mode === 'uninstall', JSON.stringify(view));
   check('卸载视图显示安装目录', view.dir === TEST_DIR, String(view.dir));
-  check('卸载视图显示版本 1.2.0', view.version === PKG.version, String(view.version));
+  check(`卸载视图显示版本 ${PKG.version}`, view.version === PKG.version, String(view.version));
 
   console.log('\n[C3] 点击确认卸载');
   await evaluate(ws, `document.getElementById('uninstall-confirm-btn').click(); true`);

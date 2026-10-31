@@ -1,5 +1,20 @@
 # AGENTS.md — Minesweeper 项目工作手册
 
+> **当前版本 1.3.0（2026-10-31）**：质量/键盘/高分屏体验升级。最新接口增量见下文及 detailed-design.md 顶部 v1.3.0 契约；旧版本运行日志保留作历史。
+
+### v1.3.0 维护速查（优先于下文旧概述）
+
+- board：indexAt/neighborIndexes 拒绝非法尺寸、非整数/越界索引；各操作安全空返回。game：首点旗/问号 noop，不布雷或计时。
+- leaderboard：白名单模式、有限非负时间；读档清洗坏记录保留好成绩；getScores 返回独立记录拷贝；昵称 trim/16字符；满榜同分后写第11，isTopTen=false。
+- renderer/main.js：导出 startApp({host,storage}={}) -> {destroy()}，只在 #app 存在时自动启动。DPR backing/CSS逻辑像素分离、鼠标扣边框换算；事件重绘，200ms定时只刷新时间。新局/换模式重新适配，重开用最新设置并清空临时 UI/待提交成绩。
+- 键盘：棋盘聚焦后方向键移动、Enter/Space 翻开或chord、F标记或镜像chord；P暂停/继续（暂停遮罩允许P恢复），F2重开。输入/IME/修饰键/昵称模态不劫持；失焦/页面隐藏自动暂停，不自动继续。
+- UI 新API：setGameStatus({state,mode,rows,cols,mines,revealedCount})、resetTransient()、destroy()。新增 #game-status/#game-meta/#game-progress/#controls-help；main 创建 #board-focus。进度只统计已翻安全格。菜单 aria-expanded/inert；弹窗焦点、Tab/Enter/Escape；无效触发点恢复到棋盘。
+- 测试：21文件，新增 board.safety/game.safety/leaderboard.safety/ui.experience/main/smoke/setup.packaging；main/UI使用jsdom，其余node。全量312项（以最后验收结果为准）。主agent编写甄别回归并确认红后分派，不允许subagent放宽测试。
+- 安装器构建白名单显式包含 styles/main.css（setup/index 引用的共享样式）；setup.packaging 回归校验。
+- 冒烟：scripts/smoke.cjs 使用隔离临时userData，校验页面及换难度/键盘/暂停重开/侧栏/排行榜，失败退出码非0；导出 collectSmokeFailures 供测试。PowerShell先 Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue，再 npx electron scripts/smoke.cjs。
+- 仍保留的边界：高级防猜测首点生成在主线程，复杂自定义盘可能短暂等待；Canvas键盘可用及文字反馈已补齐，尚非每格DOM读屏网格。
+
+
 > 本文件在每次新会话启动时加载。目标：让新对话快速上手本项目，并严格按
 > vibe-coding 工作流（见 `.agents/skills/vibe-coding-workflow/SKILL.md`）工作。
 
@@ -12,6 +27,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
   （v3 起无安装入口）；顶栏保留汉堡/标题/剩余雷数/时间/暂停/重开/横幅；展开时棋盘缩放适配（可用宽扣 248px）
 - 拖动缩放手柄缩放显示（格子 16~48px）、窗口等比自适应
 - 经典交互：左键翻开/空区扩散、右键 旗→问号→无、左键数字格 chord、右键数字格镜像 chord
+- 键盘与反馈（v1.3.0）：方向键/Enter/空格/F/P/F2、失焦自动暂停、状态与安全格进度；DPR高清画布、事件重绘、实际布局适配。
 - **防猜测模式**（设置持久化 localStorage `minesweeper.settings.v1`）：
   - 标准方式（整盘重排）：NSS+SNS 子集推理（`deduce` 暴露不动点未知格/连通簇）检测可解性；
     不可解则整体重排雷布局（≤ 最大重置轮数，默认 20，可调 1~200）
@@ -22,7 +38,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 - 排行榜：3 模式 × 防猜测开/关 共 6 组 × 前十名（昵称+用时，按用时升序），
   localStorage 持久化，胜利后输入昵称，按**实际是否无猜**归组；自定义模式不计榜；
   侧栏「排行榜」按钮 → 主页面板展示（非弹窗）
-- **独立便携安装器 MinesweeperSetup v1.2.0**（v3：安装功能从游戏程序剥离，dist 唯一产物）：
+- **独立便携安装器 MinesweeperSetup v1.3.0**（v3：安装功能从游戏程序剥离，dist 唯一产物）：
   - 单文件便携 exe（electron-builder portable，NSIS 压缩约 70MB）；双击未安装=安装向导、
     已安装=卸载确认；`--uninstall` 静默卸载（控制面板 UninstallString 入口）；
     `--install-dir <dir>` 静默安装（附 `--no-desktop-shortcut`/`--no-startmenu-shortcut`）
@@ -110,7 +126,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 ```
 ├── AGENTS.md              本手册
 ├── index.html             入口（含 CSP；仅 #app/#board-wrap/#board-canvas/#scale-handle，控件由 ui.js 生成）
-├── package.json           ESM；version 1.2.0；scripts: start/test/test:watch/dist（node scripts/build-dist.cjs）
+├── package.json           ESM；version 1.3.0；scripts: start/test/test:watch/dist（node scripts/build-dist.cjs）
 ├── electron/              主进程（CommonJS .cjs，双应用分派）
 │   ├── main.cjs           顶部 IS_SETUP 分派（resources/game-app 存在 或 MINESWEEPER_SETUP=1 → setup.cjs）；
 │   │                      游戏侧：窗口/preload/IPC（仅 app:get-version，senderFrame 校验）/单实例锁/
@@ -155,13 +171,13 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 │       ├── render.js      Canvas 经典 3D 风绘制
 │       ├── ui.js          顶栏/侧栏/主页面板/横幅/暂停遮罩/昵称
 │       └── main.js        装配：鼠标/缩放/resize/设置持久化接线
-├── tests/                 Vitest 测试（14 个文件，232 用例，先于实现编写；含 setup.ui.test.js）
+├── tests/                 Vitest 测试（21 个文件，312 用例，先于实现编写；含 setup.ui.test.js）
 ├── doc/                   需求/设计/任务文档（工作流产物，改功能先改这里）
 │   ├── proposal.md        需求提案（含用户决策记录）
 │   ├── high-level-design.md / detailed-design.md
 │   ├── prompt.md          控制 prompt（主 agent/subagent 规则）
 │   └── tasks/             任务文档 + progress.md（唯一进度源）
-└── dist/                  打包产物（gitignore；唯一文件 MinesweeperSetup-1.2.0-win.exe）
+└── dist/                  打包产物（gitignore；唯一文件 MinesweeperSetup-1.3.0-win.exe）
 .build/                    打包 staging（gitignore；剥离版游戏文件，脚本生成）
 .local/                    本地凭据/私有配置（gitignore；.local/gitee-token 发布令牌，严禁入库）
 ```
@@ -294,7 +310,7 @@ drawBoard(ctx, game, cellSize, opts={})
 ```js
 createUI(host, deps) -> { setMineCount, setTime, setPauseOverlay, setAntiGuessActive,
                           showBanner, hideBanner, showNicknamePrompt, showLeaderboard, setCustomError,
-                          setAntiGuessSettings, getSidebarOpen }
+                          setAntiGuessSettings, getSidebarOpen, setGameStatus, resetTransient, destroy }
 deps = { leaderboard, getState, actions:{ selectMode, applyCustom, toggleAntiGuess,
                                           pause, resume, restart, submitNickname,
                                           toggleSidebar, setAntiGuessMethod, setMaxAttempts,
@@ -313,6 +329,7 @@ formatTime(ms) -> 'MM:SS'
 ```
 
 ### renderer/main.js 要点（v2/v3）
+- v1.3.0：startApp({host,storage}={}) -> {destroy()}；键盘/自动暂停/DPR/实际布局与事件重绘契约见顶部维护速查。
 - 启动 `settings.get()` 回填 UI 并作为新对局 config；变更 → `settings.update()` 持久化
 - `toggleSidebar` → fitToWindow()（侧栏展开可用宽扣 248px）
 - v3：无安装/卸载流（window.minesweeperAPI 仅 app.getVersion）
@@ -365,9 +382,9 @@ npm install   # 国内网络：ELECTRON_MIRROR=https://npmmirror.com/mirrors/ele
 npm start     # 启动游戏。注意：本机 shell 预设 ELECTRON_RUN_AS_NODE=1，需先 unset
               # （unset ELECTRON_RUN_AS_NODE && npm start）
               # 开发态启动安装器：MINESWEEPER_SETUP=1 npm start（调试 setup 向导/卸载界面）
-npm test      # 全量 Vitest（232 用例，全部必须绿）
+npm test      # 全量 Vitest（312 用例，全部必须绿）
 npm run test:watch
-npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperSetup-1.2.0-win.exe；
+npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperSetup-1.3.0-win.exe；
               # 需设上述镜像环境变量；signAndEditExecutable=false；target=portable）
 # 冒烟：unset ELECTRON_RUN_AS_NODE && npx electron scripts/smoke.cjs
 # 输出 SMOKE_RESULT JSON：rendererGone/failLoad 为 null、consoleLines 空、canvasW/H>0、
@@ -447,6 +464,7 @@ npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperS
 - **建议**：将 reg.exe/PowerShell 调用抽象为可注入执行器（薄胶水之上再加一层接口），补单测。
 
 ### 8.8 core 层入参校验缺失（影响：健壮性）
+- v1.3.0：board坐标/索引校验、game首点状态守卫、leaderboard数据边界已补；以下完整config/求解参数校验仍待后续。
 - **弱点**：`generateAntiGuess*`/`createGame` 信任入参（范围校验仅在 settings 层），
   越界值可能引发异常行为。
 - **建议**：core 层加防御性校验（非法回退默认值，保持"安全返回不抛异常"铁律）。
@@ -456,8 +474,8 @@ npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperS
 - **建议**：正式分发配置代码签名证书；需要时启用 asar 压缩减小体积（当前未压缩）。
 
 ### 8.10 交互可访问性有限（影响：无障碍）
-- **弱点**：无键盘扫雷导航（方向键/空格）、无高对比度主题适配。
-- **建议**：增加键盘操作与高对比度模式（纯 CSS 变量，不破坏 CSP）。
+- v1.3.0 已增加方向键/空格/Enter/F操作、焦点轮廓与格状态中文描述、模态焦点管理；forced-colors下增强选中轮廓。
+- **仍有限制**：Canvas未提供每格DOM读屏网格，尚无完整高对比度棋盘主题；需要时进一步扩展，不宣称完全无障碍。
 
 ### 8.11 防御性分支缺端到端验证（影响：覆盖盲区）
 - **弱点**：高级防猜测的"簇全雷/簇内无雷/全部候选被拒绝"分支在小棋盘上不可达，

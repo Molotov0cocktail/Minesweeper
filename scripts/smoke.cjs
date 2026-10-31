@@ -1,60 +1,106 @@
-// 冒烟诊断脚本（开发用）：加载页面、收集控制台/崩溃事件、截图、检查画布与 DOM，然后退出。
-// 运行：ELECTRON_RUN_AS_NODE= npx electron scripts/smoke.cjs
-const { app, BrowserWindow } = require('electron');
+// 游戏真实窗口冒烟：隔离用户数据、检查加载与交互、失败返回非零退出码。
+// PowerShell: Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue; npx electron scripts/smoke.cjs
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
-app.whenReady().then(async () => {
-  const win = new BrowserWindow({
-    width: 900,
-    height: 640,
-    show: true,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload: path.join(__dirname, '..', 'electron', 'preload.cjs'),
-    },
-  });
-
-  const consoleLines = [];
-  let rendererGone = null;
-  let failLoad = null;
-
-  win.webContents.on('console-message', (_e, level, message) => {
-    if (level >= 2) consoleLines.push(`[error] ${message}`);
-    else if (level === 1) consoleLines.push(`[warn] ${message}`);
-  });
-  win.webContents.on('render-process-gone', (_e, details) => { rendererGone = details.reason; });
-  win.webContents.on('did-fail-load', (_e, code, desc) => { failLoad = `${code} ${desc}`; });
-
-  try {
-    await win.loadFile(path.join(__dirname, '..', 'index.html'));
-    await new Promise((r) => setTimeout(r, 3000));
-    const img = await win.webContents.capturePage();
-    fs.writeFileSync(path.join(__dirname, '..', 'smoke-screenshot.png'), img.toPNG());
-    const cells = await win.webContents.executeJavaScript(`(() => {
-      const c = document.getElementById('board-canvas');
-      return {
-        canvasExists: !!c,
-        canvasW: c ? c.width : -1,
-        canvasH: c ? c.height : -1,
-        appChildren: document.getElementById('app') ? document.getElementById('app').children.length : -1,
-        modeButtons: document.querySelectorAll('.ms-mode').length,
-        title: document.title,
-        // v3 深断言：preload 仅 app.getVersion；installer 面与入口按钮必须不存在（已剥离）
-        hasGetVersion:
-          typeof (window.minesweeperAPI && window.minesweeperAPI.app && window.minesweeperAPI.app.getVersion) === 'function',
-        noInstallerApi: !window.minesweeperAPI || !window.minesweeperAPI.installer,
-        noInstallerOpenBtn: !document.getElementById('installer-open'),
-        hasSidebarToggle: !!document.getElementById('sidebar-toggle'),
-        bodyClass: document.body.className,
-      };
-    })()`);
-    console.log('SMOKE_RESULT ' + JSON.stringify({ consoleLines, rendererGone, failLoad, cells }));
-  } catch (err) {
-    console.log('SMOKE_ERROR ' + err && err.stack);
+function collectSmokeFailures(result = {}) {
+  const failures = [];
+  if (!Array.isArray(result.consoleLines) || result.consoleLines.length) failures.push('控制台出现错误或警告');
+  if (result.rendererGone !== null) failures.push('渲染进程异常退出');
+  if (result.failLoad !== null) failures.push('页面加载失败');
+  const c = result.cells || {};
+  if (!c.canvasExists || !(c.canvasW > 0 && c.canvasH > 0)) failures.push('棋盘画布为空');
+  if (c.modeButtons !== 3) failures.push('难度按钮缺失');
+  for (const key of ['hasGetVersion', 'noInstallerApi', 'noInstallerOpenBtn', 'hasSidebarToggle']) {
+    if (c[key] !== true) failures.push(`页面接口检查失败：${key}`);
   }
-  app.quit();
-});
+  if (c.bodyClass?.includes('sidebar-open')) failures.push('默认侧栏未收起');
+  for (const key of ['modeFits', 'keyboardMark', 'keyboardReveal', 'pauseRestart', 'sidebar', 'leaderboard']) {
+    if (result.checks?.[key] !== true) failures.push(`交互检查失败：${key}`);
+  }
+  return failures;
+}
 
-app.on('window-all-closed', () => app.quit());
+async function runSmoke() {
+  const { app, BrowserWindow } = require('electron');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'Minesweeper-smoke-'));
+  app.setPath('userData', tempDir);
+  let win;
+  const result = { consoleLines: [], rendererGone: null, failLoad: null, cells: {}, checks: {} };
+  let exitCode = 1;
+  try {
+    await app.whenReady();
+    win = new BrowserWindow({
+      width: 900, height: 640, show: true,
+      webPreferences: { contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, '..', 'electron', 'preload.cjs') },
+    });
+    win.webContents.on('console-message', (_e, level, message) => {
+      if (level >= 1) result.consoleLines.push(message);
+    });
+    win.webContents.on('render-process-gone', (_e, details) => { result.rendererGone = details.reason; });
+    win.webContents.on('did-fail-load', (_e, code, desc) => { result.failLoad = `${code} ${desc}`; });
+    await win.loadFile(path.join(__dirname, '..', 'index.html'));
+    for (let i = 0; i < 100; i++) {
+      if (await win.webContents.executeJavaScript("!!document.getElementById('game-status')")) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    result.cells = await win.webContents.executeJavaScript(`(() => {
+      const c = document.getElementById('board-canvas');
+      return { canvasExists: !!c, canvasW: c?.width, canvasH: c?.height,
+        modeButtons: document.querySelectorAll('.ms-mode').length,
+        hasGetVersion: typeof window.minesweeperAPI?.app?.getVersion === 'function',
+        noInstallerApi: !window.minesweeperAPI?.installer,
+        noInstallerOpenBtn: !document.getElementById('installer-open'),
+        hasSidebarToggle: !!document.getElementById('sidebar-toggle'), bodyClass: document.body.className };
+    })()`);
+    result.checks = await win.webContents.executeJavaScript(`(() => {
+      const $ = id => document.getElementById(id), c = $('board-canvas');
+      const key = k => c.dispatchEvent(new KeyboardEvent('keydown', {key:k,bubbles:true,cancelable:true}));
+      const originalRandom = Math.random;
+      let seed = 123;
+      Math.random = () => ((seed = (1664525 * seed + 1013904223) >>> 0) / 4294967296);
+      try {
+        $('anti-guess-toggle').checked = false;
+        $('anti-guess-toggle').dispatchEvent(new Event('change'));
+        document.querySelector('.ms-mode[data-mode="expert"]').click();
+        const modeFits = parseFloat(c.style.width) <= innerWidth - 40 && $('game-meta').textContent.includes('高级');
+        document.querySelector('.ms-mode[data-mode="beginner"]').click();
+        c.focus(); key('ArrowRight'); key('f');
+        const keyboardMark = $('mine-count').textContent === '9' && c.getAttribute('aria-label').includes('旗');
+        key('f'); key('f'); key('Enter');
+        const keyboardReveal = $('game-status').textContent.includes('进行中');
+        $('pause-btn').click();
+        const paused = !$('pause-overlay').classList.contains('hidden');
+        $('restart-btn').click();
+        const pauseRestart = paused && $('pause-overlay').classList.contains('hidden') && $('timer').textContent === '00:00';
+        $('sidebar-toggle').click();
+        const sidebar = $('sidebar-toggle').getAttribute('aria-expanded') === 'true' && !$('sidebar').inert;
+        $('leaderboard-open').click();
+        const leaderboard = !$('leaderboard-modal').classList.contains('hidden');
+        $('leaderboard-close').click();
+        $('sidebar-toggle').click();
+        return {modeFits, keyboardMark, keyboardReveal, pauseRestart, sidebar, leaderboard};
+      } finally { Math.random = originalRandom; }
+    })()`);
+    const failures = collectSmokeFailures(result);
+    result.failures = failures;
+    exitCode = failures.length ? 1 : 0;
+    fs.writeFileSync(path.join(__dirname, '..', 'smoke-screenshot.png'), (await win.webContents.capturePage()).toPNG());
+    console.log('SMOKE_RESULT ' + JSON.stringify(result));
+  } catch (error) {
+    console.error('冒烟失败：' + (error?.stack || String(error)));
+  } finally {
+    if (win && !win.isDestroyed()) win.destroy();
+    app.once('will-quit', () => {
+      try { fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
+      catch { /* 不影响退出码；系统临时目录可由系统回收。 */ }
+      process.exitCode = exitCode;
+    });
+    app.quit();
+  }
+}
+
+module.exports = { collectSmokeFailures, runSmoke };
+// Electron 的主脚本由内部 bootstrap 加载，require.main 不一定等于当前模块。
+if (require.main === module || (process.versions?.electron && process.type === 'browser')) runSmoke();

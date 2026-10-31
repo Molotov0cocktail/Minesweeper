@@ -1,7 +1,7 @@
 {
   "name": "minesweeper",
   "productName": "Minesweeper",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Electron 经典扫雷：防猜测模式 + 排行榜 + 独立安装器 MinesweeperSetup",
   "main": "electron/main.cjs",
   "type": "module",
