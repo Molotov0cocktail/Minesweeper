@@ -15,11 +15,13 @@ import {
   revealAllMines,
   indexAt,
   CELL_HIDDEN,
+  neighborIndexes,
 } from './board.js';
 import { generateAntiGuess, generateAntiGuessAdvanced } from './solve.js';
 
 export const STATE = {
   READY: 'ready',
+  GENERATING: 'generating',
   PLAYING: 'playing',
   PAUSED: 'paused',
   WON: 'won',
@@ -27,6 +29,7 @@ export const STATE = {
 };
 
 const WARNING_DENSITY = '防猜测已关闭：雷密度过高，无法保证无猜';
+const WARNING_GENERATION = '防猜测已关闭：生成超时或失败，已切换普通开局';
 // 重排耗尽文案为模板字符串 `防猜测已关闭：重排 ${maxAttempts} 次仍无法保证无猜`
 // （默认 20 时与旧精确字符串逐字符相同）
 
@@ -36,7 +39,8 @@ const WARNING_DENSITY = '防猜测已关闭：雷密度过高，无法保证无�
  *           antiGuessMethod?:'standard'|'advanced', maxAttempts?:number, maxRegionAttempts?:number }} config
  *   antiGuessMethod 默认 'standard'；maxAttempts/maxRegionAttempts 默认 20。
  *   新字段均有默认值（旧 config 零迁移），game 不校验/不夹取（有效性由 settings 保证）。
- * @param {{ now?: () => number }} [opts] now 可注入假时钟，默认 () => Date.now()
+ * @param {{ now?: () => number, prepareBoard?: (config:object, startIdx:number) => Promise<object> }} [opts]
+ *   now 可注入假时钟；prepareBoard 可注入可取消的异步首点生成服务。
  * @returns {Game}
  */
 export function createGame(config, opts = {}) {
@@ -49,6 +53,8 @@ class Game {
   #accumulated;
   #startAt;
   #finalTimeMs;
+  #prepareBoard;
+  #generation = 0;
 
   constructor(config, opts = {}) {
     this.rows = config.rows;
@@ -69,13 +75,14 @@ class Game {
     this.antiGuessStats = null;
 
     this.#now = opts.now || (() => Date.now());
+    this.#prepareBoard = typeof opts.prepareBoard === 'function' ? opts.prepareBoard : null;
     this.#listeners = Object.create(null);
     this.#accumulated = 0;
     this.#startAt = 0;
     this.#finalTimeMs = null;
   }
 
-  /** 注册事件：'win' | 'lose' | 'warning' */
+  /** 注册事件：'win' | 'lose' | 'warning' | 'generated' */
   on(evt, cb) {
     if (!this.#listeners[evt]) this.#listeners[evt] = [];
     this.#listeners[evt].push(cb);
@@ -91,6 +98,7 @@ class Game {
    * antiGuessStats=null；保留 antiGuessMethod/maxAttempts/maxRegionAttempts 配置字段
    */
   restart() {
+    this.cancelGeneration();
     this.board = createBoard(this.rows, this.cols, this.mines);
     this.state = STATE.READY;
     this.antiGuessActive = false;
@@ -101,9 +109,19 @@ class Game {
     this.#finalTimeMs = null;
   }
 
+  /** 只使当前生成结果失效；底层计算的终止由注入服务的所有者负责。 */
+  cancelGeneration() {
+    this.#generation += 1;
+    if (this.state !== STATE.GENERATING) return;
+    this.state = STATE.READY;
+    this.antiGuessActive = false;
+    this.warning = null;
+    this.antiGuessStats = null;
+  }
+
   /**
    * 翻开格子。READY 下为首次点击（触发布雷），PLAYING 下正常翻开。
-   * @returns {{ type:'reveal'|'win'|'lose'|'noop' }}
+   * @returns {{ type:'reveal'|'win'|'lose'|'noop'|'generating' }}
    */
   reveal(row, col) {
     if (this.state === STATE.READY) {
@@ -200,6 +218,11 @@ class Game {
     // 首点必须真正能翻开：旗或问号不触发布雷、求解与计时。
     if (this.board.cells[safeIdx].state !== CELL_HIDDEN) return { type: 'noop' };
 
+    if (this.antiGuess && this.#prepareBoard) {
+      this.#startGeneration(row, col, safeIdx);
+      return { type: 'generating' };
+    }
+
     if (this.antiGuess) {
       if (this.antiGuessMethod === 'advanced') {
         this.#firstRevealAdvanced(safeIdx);
@@ -217,6 +240,76 @@ class Game {
     this.#startAt = this.#now();
     const result = revealBoard(this.board, row, col);
     return this.#settle(result);
+  }
+
+  #startGeneration(row, col, safeIdx) {
+    const generation = ++this.#generation;
+    this.state = STATE.GENERATING;
+    const config = {
+      rows: this.rows, cols: this.cols, mines: this.mines, mode: this.mode,
+      antiGuess: this.antiGuess, antiGuessMethod: this.antiGuessMethod,
+      maxAttempts: this.maxAttempts, maxRegionAttempts: this.maxRegionAttempts,
+    };
+    let pending;
+    try {
+      // 同步启动服务，让紧随其后的取消操作能立即终止已启动的 Worker。
+      pending = this.#prepareBoard(config, safeIdx);
+    } catch (error) {
+      pending = Promise.reject(error);
+    }
+    Promise.resolve(pending).then(
+      result => {
+        if (!this.#isCurrentGeneration(generation)) return;
+        const mineSet = this.#validatedOpening(result, safeIdx);
+        if (!mineSet) {
+          this.#fallbackGeneration(row, col, safeIdx);
+          return;
+        }
+        this.#finishGeneration(row, col, mineSet, {
+          antiGuessActive: result.antiGuessActive === true,
+          warning: typeof result.warning === 'string' ? result.warning : null,
+          stats: result.stats && typeof result.stats === 'object' ? { ...result.stats } : null,
+        });
+      },
+      () => {
+        if (this.#isCurrentGeneration(generation)) this.#fallbackGeneration(row, col, safeIdx);
+      },
+    );
+  }
+
+  #isCurrentGeneration(generation) {
+    return this.#generation === generation && this.state === STATE.GENERATING;
+  }
+
+  #validatedOpening(result, safeIdx) {
+    if (!result || !Array.isArray(result.mineSet) || result.mineSet.length !== this.mines) return null;
+    const mineSet = new Set(result.mineSet);
+    if (mineSet.size !== this.mines) return null;
+    const excluded = new Set([safeIdx, ...neighborIndexes(this.rows, this.cols, safeIdx)]);
+    for (const index of mineSet) {
+      if (!Number.isInteger(index) || index < 0 || index >= this.rows * this.cols || excluded.has(index)) return null;
+    }
+    return mineSet;
+  }
+
+  #fallbackGeneration(row, col, safeIdx) {
+    this.#finishGeneration(row, col, randomMineSet(this.rows, this.cols, this.mines, safeIdx), {
+      antiGuessActive: false,
+      warning: WARNING_GENERATION,
+      stats: null,
+    });
+  }
+
+  #finishGeneration(row, col, mineSet, { antiGuessActive, warning, stats }) {
+    setMines(this.board, mineSet);
+    this.antiGuessActive = antiGuessActive;
+    this.warning = warning;
+    this.antiGuessStats = stats;
+    this.state = STATE.PLAYING;
+    this.#startAt = this.#now();
+    const outcome = this.#settle(revealBoard(this.board, row, col));
+    if (warning) this.#emit('warning', warning);
+    this.#emit('generated', outcome);
   }
 
   /** 标准模式：整盘重排（透传 maxAttempts）；可解生效 / 密度关闭 / 重排耗尽关闭 三分支 */
