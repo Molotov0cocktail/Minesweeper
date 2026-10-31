@@ -6,7 +6,7 @@
 
 顶栏“专注”、F10 或手柄 R3 可切为仅棋盘、进度和雷数/时间；退出按钮或菜单可恢复。手柄设置与视图偏好沿用原存储键保存。
 
-[下载 Windows 安装器](https://gitee.com/Molotov0coaktail/minesweeper/releases/download/v1.5.0/MinesweeperSetup-1.5.0-win.exe)。验收与本地更新记录见 `doc/tasks/progress.md`。
+[下载 Windows 安装器](https://gitee.com/Molotov0coaktail/minesweeper/releases/download/v1.5.0/MinesweeperSetup-1.5.0-win.exe)（70.9 MB）。2026-10-31已发布，414项测试、双缩放12项冒烟、32项安装验收通过；公开附件校验一致。本地game副本已更新且原存档摘要未变。详细记录见 `doc/tasks/progress.md`。
 
 基于 Electron 的经典扫雷桌面程序，支持自定义棋盘、拖动缩放、可配置防猜测模式（标准/高级）、
 三种标准模式排行榜。安装/卸载由**独立便携安装器 MinesweeperSetup** 负责（游戏程序本体已剥离安装功能）。

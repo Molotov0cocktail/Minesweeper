@@ -1,6 +1,7 @@
 # AGENTS.md — Minesweeper 项目工作手册
 
-> **当前版本1.5.0（2026-10-31）**：简洁主界面、完整手柄菜单、B标雷、可自定义键位、专注视图。以下v1.5速查优先于历史记录，最终发布和本地更新状态见progress.md。
+> **当前版本1.5.0（2026-10-31）**：简洁主界面、完整手柄菜单、B标雷、可自定义键位、专注视图。以下v1.5速查优先于历史记录。
+> 已发布 [Gitee v1.5.0](https://gitee.com/Molotov0coaktail/minesweeper/releases/tag/v1.5.0)，414测试/双缩放12项冒烟/E2E32项通过；公开附件HTTP200且SHA256一致。本地game已更新到1.5.0，原设置与排行榜摘要未变。
 
 ### v1.5.0 维护速查
 
@@ -356,7 +357,8 @@ createUI(host, deps) -> { setMineCount, setTime, setPauseOverlay, setAntiGuessAc
 deps = { leaderboard, getState, actions:{ selectMode, applyCustom, toggleAntiGuess,
                                           pause, resume, restart, submitNickname,
                                           toggleSidebar, setAntiGuessMethod, setMaxAttempts,
-                                          setMaxRegionAttempts, openLeaderboard } }
+                                          setMaxRegionAttempts, openLeaderboard, setGamepadBinding,
+                                          resetGamepadBindings, setFocusView, setBoardSize } }
 // v2 新增 actions 一律可选链调用（旧测试 deps 无这些键）
 formatTime(ms) -> 'MM:SS'
 // DOM 契约（jsdom 测试按 id 查询，新增控件不得破坏这些 id）：
@@ -440,7 +442,7 @@ npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperS
 #   发布后验证（公开 API，无需令牌）：
 #   curl https://gitee.com/api/v5/repos/Molotov0coaktail/minesweeper/releases
 #   首个 Release：v1.2.0（2026-08-04，含排行榜修复；发布流程经实测稳定，含 3 个踩坑修复）
-#   最新 Release：v1.4.0（2026-10-31，手柄/Worker生成/双向推理/本地程序就地更新；371用例、E2E32/32）
+#   最新 Release：v1.5.0（2026-10-31，完整手柄界面/默认B/自定义键位/说明专页/专注；414用例、E2E32/32）
 ```
 
 ## 7. 测试约定
