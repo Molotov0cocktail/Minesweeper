@@ -16,7 +16,7 @@ function collectSmokeFailures(result = {}) {
     if (c[key] !== true) failures.push(`页面接口检查失败：${key}`);
   }
   if (c.bodyClass?.includes('sidebar-open')) failures.push('默认侧栏未收起');
-  for (const key of ['modeFits', 'keyboardMark', 'keyboardReveal', 'pauseRestart', 'sidebar', 'leaderboard']) {
+  for (const key of ['modeFits', 'keyboardMark', 'keyboardReveal', 'pauseRestart', 'sidebar', 'leaderboard', 'workerGeneration', 'controller']) {
     if (result.checks?.[key] !== true) failures.push(`交互检查失败：${key}`);
   }
   return failures;
@@ -83,6 +83,41 @@ async function runSmoke() {
         return {modeFits, keyboardMark, keyboardReveal, pauseRestart, sidebar, leaderboard};
       } finally { Math.random = originalRandom; }
     })()`);
+    // 真正启动module Worker，并经浏览器Gamepad轮询模拟输入；不直接调用游戏内部函数。
+    win.focus();
+    Object.assign(result.checks, await win.webContents.executeJavaScript(`(async () => {
+      const $ = id => document.getElementById(id), c = $('board-canvas');
+      const key = k => c.dispatchEvent(new KeyboardEvent('keydown', {key:k,bubbles:true,cancelable:true}));
+      const NativeWorker = window.Worker;
+      const gamepadDescriptor = Object.getOwnPropertyDescriptor(navigator, 'getGamepads');
+      let completed = false;
+      const frames = async () => { for(let i=0;i<3;i++) await new Promise(requestAnimationFrame); };
+      try {
+        window.Worker = class extends NativeWorker {
+          constructor(...args) { super(...args); this.addEventListener('message', event => { if(event.data?.result) completed = true; }); }
+        };
+        $('anti-guess-toggle').checked = true;
+        $('anti-guess-toggle').dispatchEvent(new Event('change'));
+        $('restart-btn').click(); c.focus(); key('Enter');
+        const showedGenerating = c.getAttribute('aria-busy') === 'true';
+        const deadline = Date.now()+10000;
+        while(c.getAttribute('aria-busy') === 'true' && Date.now()<deadline) await new Promise(r=>setTimeout(r,25));
+        const workerGeneration = showedGenerating && completed && c.getAttribute('aria-busy') === 'false';
+        $('anti-guess-toggle').checked = false;
+        $('anti-guess-toggle').dispatchEvent(new Event('change'));
+        $('restart-btn').click(); c.focus();
+        const p={id:'模拟标准手柄',index:0,connected:true,mapping:'standard',axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false,value:0}))};
+        Object.defineProperty(navigator,'getGamepads',{configurable:true,value:()=>[p]});
+        await frames();
+        p.buttons[15].pressed=true; await frames(); p.buttons[15].pressed=false; await frames();
+        p.buttons[2].pressed=true; await frames(); p.buttons[2].pressed=false; await frames();
+        const controller=$('controller-status').textContent.includes('模拟标准手柄') && $('mine-count').textContent==='9' && c.getAttribute('aria-label').includes('第 2 列') && c.getAttribute('aria-label').includes('旗');
+        return {workerGeneration,controller};
+      } finally {
+        window.Worker=NativeWorker;
+        if(gamepadDescriptor) Object.defineProperty(navigator,'getGamepads',gamepadDescriptor); else delete navigator.getGamepads;
+      }
+    })()`));
     const failures = collectSmokeFailures(result);
     result.failures = failures;
     exitCode = failures.length ? 1 : 0;

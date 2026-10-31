@@ -1,6 +1,21 @@
 # AGENTS.md — Minesweeper 项目工作手册
 
-> **当前版本 1.3.0（2026-10-31）**：质量/键盘/高分屏体验升级。最新接口增量见下文及 detailed-design.md 顶部 v1.3.0 契约；旧版本运行日志保留作历史。
+> **当前版本 1.4.0（2026-10-31）**：标准手柄操作、双向子集推理、可取消Worker首点生成；优先遵守本段及detailed-design顶部v1.4契约。发布与本地更新验收结果见progress.md最新记录。
+
+### v1.4.0 维护速查
+
+- core/gamepad.js：createGamepadMapper()->{poll(gamepads,now,enabled=true),reset()}；标准映射、0.35死区、中立解锁、动作边沿、方向300/100ms连发、Y持800ms重开。renderer/gamepad.js：startGamepad(回调及API注入)->stop()，RAF轮询/状态去重/清理。
+- 手柄：方向键/左摇杆移动，A/叉翻开或确认，X/方块标记，B/圆取消昵称或面板，Start暂停/继续；长按Y/三角800ms重开。昵称A提交默认昵称，暂停A继续；失焦/普通输入框禁用，非standard映射不猜测按键。
+- solve.deduce修复双方向真子集，缓存单次邻居表，尺寸[1,60]与非法布局安全返回不可解；高级失败试排不污染移雷基准，真实deduce次数≤400。独立预言机穷举560种5×5三雷布局；旧{1,4,19}能排除14并分成3簇，精确测试随契约更新。
+- renderer/generation-worker.js：generateOpening(config,startIdx)统一标准/高级回退，消息{id,config,startIdx}->{id,result|error}。generation-client.js：createGenerationClient()->{prepare,cancel,destroy}，独立module Worker、8000ms硬超时，取消直接terminate，不在UI线程补跑求解。
+- game新增STATE.GENERATING与opts.prepareBoard；reveal可返回{type:'generating'}，生成时不计时且棋盘操作noop；cancelGeneration/restart使世代失效；结果验证精确雷数、索引与首点3×3安全后提交并发generated。异常/超时回退普通开局，中文横幅明确告知无猜已关闭。
+- main.startApp新增generationClient/gamepadFactory可选注入；新局先cancelGeneration再cancel Worker，销毁同时释放轮询与生成器；后台完成后暂停。独立focused状态防止visibilitychange错误重新启用手柄。
+- UI新增setControllerStatus({connected,supported,id})及#controller-status；生成状态aria-busy与中文提示、重开可取消。smoke增加真实Worker通信和模拟Gamepad轮询检查。
+- 测试27文件/371项；新增gamepad/gamepad.poller/solve.quality/generation/game.generation/main.controller。硬件未连接时只报告模拟验收。
+- 本地就地更新D:\Minesweeper\game：先备份原清单文件并对localStorage做摘要校验；使用新Setup --install-dir，保留原用户数据/外来文件/快捷方式偏好；不将.local或game入库。
+
+
+> **历史版本 1.3.0（2026-10-31）**：质量/键盘/高分屏体验升级。下面保留该次维护记录，冲突时以本文件顶部v1.4.0契约为准。
 > 已发布 [Gitee v1.3.0](https://gitee.com/Molotov0coaktail/minesweeper/releases/tag/v1.3.0)，公开附件HTTP200且SHA256与本地一致；312测试、双缩放冒烟、安装E2E32/32均通过。
 
 ### v1.3.0 维护速查（优先于下文旧概述）
@@ -13,7 +28,7 @@
 - 测试：21文件，新增 board.safety/game.safety/leaderboard.safety/ui.experience/main/smoke/setup.packaging；main/UI使用jsdom，其余node。全量312项（以最后验收结果为准）。主agent编写甄别回归并确认红后分派，不允许subagent放宽测试。
 - 安装器构建白名单显式包含 styles/main.css（setup/index 引用的共享样式）；setup.packaging 回归校验。
 - 冒烟：scripts/smoke.cjs 使用隔离临时userData，校验页面及换难度/键盘/暂停重开/侧栏/排行榜，失败退出码非0；导出 collectSmokeFailures 供测试。PowerShell先 Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue，再 npx electron scripts/smoke.cjs。
-- 仍保留的边界：高级防猜测首点生成在主线程，复杂自定义盘可能短暂等待；Canvas键盘可用及文字反馈已补齐，尚非每格DOM读屏网格。
+- v1.4.0已将首点生成移入Worker并提供取消/超时；Canvas键盘可用及文字反馈已补齐，尚非每格DOM读屏网格。
 
 
 > 本文件在每次新会话启动时加载。目标：让新对话快速上手本项目，并严格按
@@ -39,7 +54,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 - 排行榜：3 模式 × 防猜测开/关 共 6 组 × 前十名（昵称+用时，按用时升序），
   localStorage 持久化，胜利后输入昵称，按**实际是否无猜**归组；自定义模式不计榜；
   侧栏「排行榜」按钮 → 主页面板展示（非弹窗）
-- **独立便携安装器 MinesweeperSetup v1.3.0**（v3：安装功能从游戏程序剥离，dist 唯一产物）：
+- **独立便携安装器 MinesweeperSetup v1.4.0**（v3：安装功能从游戏程序剥离，dist 唯一产物）：
   - 单文件便携 exe（electron-builder portable，NSIS 压缩约 70MB）；双击未安装=安装向导、
     已安装=卸载确认；`--uninstall` 静默卸载（控制面板 UninstallString 入口）；
     `--install-dir <dir>` 静默安装（附 `--no-desktop-shortcut`/`--no-startmenu-shortcut`）
@@ -56,7 +71,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
   - 旧版 NSIS 残留（目录/快捷方式/注册表）检测 + 一键清理（setup 内）
 - 中文界面，经典 Windows 扫雷 3D 浮雕风格（侧栏/面板/向导经美化升级）
 
-技术栈：Electron 33 + 原生 ESM（无打包器）+ Canvas 2D + Vitest（测试）+ electron-builder（打包 dir/zip 绿色版）。
+技术栈：Electron 33 + 原生 ESM（无打包器）+ Canvas 2D + module Worker + Gamepad API + Vitest（测试）+ electron-builder（portable安装器）。
 
 ## 2. 工作流程（必须遵守）
 
@@ -127,7 +142,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 ```
 ├── AGENTS.md              本手册
 ├── index.html             入口（含 CSP；仅 #app/#board-wrap/#board-canvas/#scale-handle，控件由 ui.js 生成）
-├── package.json           ESM；version 1.3.0；scripts: start/test/test:watch/dist（node scripts/build-dist.cjs）
+├── package.json           ESM；version 1.4.0；scripts: start/test/test:watch/dist（node scripts/build-dist.cjs）
 ├── electron/              主进程（CommonJS .cjs，双应用分派）
 │   ├── main.cjs           顶部 IS_SETUP 分派（resources/game-app 存在 或 MINESWEEPER_SETUP=1 → setup.cjs）；
 │   │                      游戏侧：窗口/preload/IPC（仅 app:get-version，senderFrame 校验）/单实例锁/
@@ -162,6 +177,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 │   │   ├── modes.js       模式预设 + 自定义参数校验
 │   │   ├── board.js       棋盘模型：布雷/翻开洪泛/chord×2/标记循环/胜负
 │   │   ├── solve.js       可解性判定（deduce：暴露 unknown/连通簇）+ 防猜测重排（标准/高级局部）
+│   │   ├── gamepad.js     纯标准手柄映射状态机（死区/中立解锁/边沿/重复/长按）
 │   │   ├── game.js        游戏状态机 + 正向计时 + 暂停 + 防猜测调度（标准/高级+回退）
 │   │   ├── leaderboard.js localStorage 排行榜
 │   │   ├── settings.js    防猜测设置持久化（sanitize/损坏回退/降级）
@@ -171,14 +187,17 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 │   └── renderer/          渲染与交互（v3 无任何安装相关代码）
 │       ├── render.js      Canvas 经典 3D 风绘制
 │       ├── ui.js          顶栏/侧栏/主页面板/横幅/暂停遮罩/昵称
+│       ├── gamepad.js     浏览器手柄RAF轮询，返回stop清理函数
+│       ├── generation-client.js Worker生命周期/取消/超时
+│       ├── generation-worker.js Worker生成协议与标准/高级回退
 │       └── main.js        装配：鼠标/缩放/resize/设置持久化接线
-├── tests/                 Vitest 测试（21 个文件，312 用例，先于实现编写；含 setup.ui.test.js）
+├── tests/                 Vitest 测试（27 个文件，371 用例，先于实现编写；含 setup.ui.test.js）
 ├── doc/                   需求/设计/任务文档（工作流产物，改功能先改这里）
 │   ├── proposal.md        需求提案（含用户决策记录）
 │   ├── high-level-design.md / detailed-design.md
 │   ├── prompt.md          控制 prompt（主 agent/subagent 规则）
 │   └── tasks/             任务文档 + progress.md（唯一进度源）
-└── dist/                  打包产物（gitignore；唯一文件 MinesweeperSetup-1.3.0-win.exe）
+└── dist/                  打包产物（gitignore；唯一文件 MinesweeperSetup-1.4.0-win.exe）
 .build/                    打包 staging（gitignore；剥离版游戏文件，脚本生成）
 .local/                    本地凭据/私有配置（gitignore；.local/gitee-token 发布令牌，严禁入库）
 ```
@@ -230,20 +249,21 @@ generateAntiGuessAdvanced(rows,cols,mines,startIdx,opts={maxRegionAttempts,rng})
 
 ### core/game.js
 ```js
-STATE = { READY:'ready', PLAYING:'playing', PAUSED:'paused', WON:'won', LOST:'lost' }
+STATE = { READY:'ready', GENERATING:'generating', PLAYING:'playing', PAUSED:'paused', WON:'won', LOST:'lost' }
 createGame(config, opts={})
 // config:{rows,cols,mines,antiGuess,mode, antiGuessMethod?,maxAttempts?,maxRegionAttempts?}
 //   antiGuessMethod:'standard'|'advanced'(默认 standard)；maxAttempts/maxRegionAttempts 默认 20
-// opts:{now?:()=>number}
+// opts:{now?:()=>number, prepareBoard?:(config,startIdx)=>Promise<Opening>}
 game: { state,rows,cols,mines,mode,board,antiGuess,antiGuessActive,warning,
         antiGuessMethod,maxAttempts,maxRegionAttempts,antiGuessStats|null }
 game.restart()                // 保留防猜测配置字段，重置 antiGuessStats=null
 game.pause()/resume()   game.getElapsedMs()  game.getRemainingMines()
-game.reveal(row,col)    -> {type:'reveal'|'win'|'lose'|'noop'}
+game.reveal(row,col)    -> {type:'generating'|'reveal'|'win'|'lose'|'noop'}
 game.chordLeft(row,col) -> {type:'reveal'|'win'|'lose'|'noop'}
 game.chordRight(row,col)-> {type:'flag'|'blocked'|'noop'}
 game.cycleMark(row,col) -> {type:'mark', state, blocked}
-game.on('win'|'lose'|'warning', cb)
+game.cancelGeneration()       // 使异步世代失效，生成态回ready
+game.on('win'|'lose'|'warning'|'generated', cb)
 // win/lose payload: {timeMs, mode, antiGuessActive, rows, cols, mines}
 // warning 精确文案：
 //   '防猜测已关闭：雷密度过高，无法保证无猜'
@@ -311,7 +331,7 @@ drawBoard(ctx, game, cellSize, opts={})
 ```js
 createUI(host, deps) -> { setMineCount, setTime, setPauseOverlay, setAntiGuessActive,
                           showBanner, hideBanner, showNicknamePrompt, showLeaderboard, setCustomError,
-                          setAntiGuessSettings, getSidebarOpen, setGameStatus, resetTransient, destroy }
+                          setAntiGuessSettings, getSidebarOpen, setGameStatus, setControllerStatus, resetTransient, destroy }
 deps = { leaderboard, getState, actions:{ selectMode, applyCustom, toggleAntiGuess,
                                           pause, resume, restart, submitNickname,
                                           toggleSidebar, setAntiGuessMethod, setMaxAttempts,
@@ -383,9 +403,9 @@ npm install   # 国内网络：ELECTRON_MIRROR=https://npmmirror.com/mirrors/ele
 npm start     # 启动游戏。注意：本机 shell 预设 ELECTRON_RUN_AS_NODE=1，需先 unset
               # （unset ELECTRON_RUN_AS_NODE && npm start）
               # 开发态启动安装器：MINESWEEPER_SETUP=1 npm start（调试 setup 向导/卸载界面）
-npm test      # 全量 Vitest（312 用例，全部必须绿）
+npm test      # 全量 Vitest（371 用例，全部必须绿）
 npm run test:watch
-npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperSetup-1.3.0-win.exe；
+npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperSetup-1.4.0-win.exe；
               # 需设上述镜像环境变量；signAndEditExecutable=false；target=portable）
 # 冒烟：unset ELECTRON_RUN_AS_NODE && npx electron scripts/smoke.cjs
 # 输出 SMOKE_RESULT JSON：rendererGone/failLoad 为 null、consoleLines 空、canvasW/H>0、
@@ -434,6 +454,7 @@ npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperS
   需配预算与缓存）；否则维持现状并在 README 说明近似性。
 
 ### 8.2 高级防猜测模式最坏情况耗时（影响：大棋盘首点延迟）
+- v1.4.0 已移至Worker，首点不阻塞UI；可重开取消，8秒硬超时后普通安全开局并警告。推理邻居表已单次缓存，仍无增量推理/跨布局缓存，不能保证所有局面8秒内生成无猜盘。
 - **弱点**：每次区域重排/候选验证都是整盘 `deduce`（60×60 单次约 10~50ms），
   最坏场景受 `MAX_TOTAL_DEDUCE=400` 预算兜底，首点延迟可达数秒。
 - **建议**：区域重排后增量重推（仅重算受影响区域的前沿）；同一对局内 deduce 结果缓存；
