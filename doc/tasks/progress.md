@@ -9,13 +9,16 @@
 |T39 地雷图元|✅|13项新回归+原render6绿；16~96px正常/失败预览通过|
 |T40 应用资源|✅|资源2/2绿；512透明PNG与八帧ICO；图标预览通过|
 |T41 PE与构建接线|✅|3项新回归+原打包回归绿；真实Electron内存/副本八帧验证通过|
-|T42 视觉/发布/本地更新|🟨|432测试/双缩放12项/打包/E2E32项/本地1.5.1绿；待Release|
+|T42 视觉/发布/本地更新|✅|432测试/双缩放12项/打包/E2E32项/本地1.5.1/公开Release全完成|
 
 - 主agent先红：缺图元/PE模块导入失败、资源不存在与构建接线断言失败；三模块分派后18项新增回归全绿，未放宽测试。SVG源是代码原生图形，PNG/ICO仅由它生成。
 - 应用512预览与地雷16/20/24/32/48/96px正常/失败预览通过；双缩放smoke12项全true，无console/渲染错误，normal/focus截图已审阅。
 - npm run dist成功，唯一MinesweeperSetup-1.5.1-win.exe，74,730,516字节，SHA256=535a46241d36285bc116fc7e3ac6a71040284202ee46a2121aca4bb78cf54d4b。重复生成资源未改变已提交PNG/ICO。
 - 安装E2E32/32通过；先备份并恢复原注册表/快捷方式，再按原桌面启用/开始菜单禁用偏好就地更新game。运行确认1.5.0→1.5.1，清单/注册表版本一致；两个localStorage键摘要完全未变，六个升级文件与源码逐字节一致。
 - portable入口与安装Minesweeper.exe均解析实际PE，8尺寸及每帧PNG字节与assets/ICO一致。真实Electron底包内存/副本验证保留非图标资源/overlay，node_modules底包SHA前后一致。对exe/桌面快捷方式发送Shell更新通知，未删除系统图标缓存。
+- Windows ExtractAssociatedIcon实际提取32px图标并预览确认为新版；快捷方式TargetPath/IconLocation均为game/Minesweeper.exe，注册表DisplayVersion=1.5.1。
+- T39/T40/T41/T42逐模块commit+push；发布提交291b43c，tag v1.5.1已推送，publish-release成功（Release ID=1260095）。公开API存在、无凭据完整下载HTTP200、74,730,516字节，SHA256=535a46241d36285bc116fc7e3ac6a71040284202ee46a2121aca4bb78cf54d4b，与本地一致。
+- staging、冒烟/图标预览、旧安装备份与E2E系统备份、临时验收脚本及本次TEMP缓存已可恢复地移入回收站。E2E目录无残留；凭据/用户档案/本地安装目录/构建产物未入库。
 
 
 ## v1.5.0（2026-10-31）

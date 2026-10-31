@@ -1,6 +1,7 @@
 # AGENTS.md — Minesweeper 项目工作手册
 
-> **当前版本1.5.1（2026-10-31）**：金属地雷图元、统一应用图标、多尺寸ICO与真实exe资源嵌入。432测试/双缩放12项冒烟/E2E32项通过，本地game已更新且存档摘要不变；发布状态见doc/tasks/progress.md。
+> **当前版本1.5.1（2026-10-31）**：金属地雷图元、统一应用图标、多尺寸ICO与真实exe资源嵌入。432测试/双缩放12项冒烟/E2E32项通过，本地game已更新且存档摘要不变。
+> 已发布 [Gitee v1.5.1](https://gitee.com/Molotov0coaktail/minesweeper/releases/tag/v1.5.1)，公开附件HTTP200、74,730,516字节、SHA256与本地一致；Windows实际提取图标已确认新版。
 
 ### v1.5.1 维护速查
 
@@ -461,7 +462,7 @@ npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperS
 #   发布后验证（公开 API，无需令牌）：
 #   curl https://gitee.com/api/v5/repos/Molotov0coaktail/minesweeper/releases
 #   首个 Release：v1.2.0（2026-08-04，含排行榜修复；发布流程经实测稳定，含 3 个踩坑修复）
-#   最新 Release：v1.5.0（2026-10-31，完整手柄界面/默认B/自定义键位/说明专页/专注；414用例、E2E32/32）
+#   最新 Release：v1.5.1（2026-10-31，金属地雷/应用图标/真实PE资源；432用例、E2E32/32）
 ```
 
 ## 7. 测试约定
