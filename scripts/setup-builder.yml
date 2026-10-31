@@ -6,6 +6,7 @@
 
 appId: com.molotov.minesweeper
 productName: MinesweeperSetup
+afterPack: ./scripts/icon-after-pack.cjs
 directories:
   output: dist
 files:
@@ -18,6 +19,7 @@ files:
   - src/core/installer.js
   - setup/**
   - styles/main.css
+  - assets/**
   - package.json
 extraResources:
   # 内嵌剥离版游戏文件（.build/game-app，由 scripts/build-dist.cjs staging 生成）；
@@ -25,6 +27,7 @@ extraResources:
   - from: .build/game-app
     to: game-app
 win:
+  icon: assets/minesweeper.ico
   target:
     - portable
   signAndEditExecutable: false

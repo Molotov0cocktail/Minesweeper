@@ -193,6 +193,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 520,
     height: 480,
+    icon: path.join(__dirname, '..', 'assets', 'minesweeper.png'),
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,

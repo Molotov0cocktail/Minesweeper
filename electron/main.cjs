@@ -72,6 +72,7 @@ function createWindow() {
     height: 640,
     minWidth: 480,
     minHeight: 360,
+    icon: path.join(__dirname, '..', 'assets', 'minesweeper.png'),
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
