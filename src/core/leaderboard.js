@@ -21,6 +21,39 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function isValidTime(timeMs) {
+  return typeof timeMs === 'number' && Number.isFinite(timeMs) && timeMs >= 0;
+}
+
+function normalizeNickname(name) {
+  return (typeof name === 'string' ? name.trim() : '').slice(0, NICKNAME_MAX_LEN) || DEFAULT_NICKNAME;
+}
+
+// 只信任已知模式与有效成绩，部分损坏不影响同一存档中的合法记录。
+function sanitizeData(parsed) {
+  const data = {};
+  if (!isPlainObject(parsed)) return data;
+  for (const mode of LEADERBOARD_MODES) {
+    const group = parsed[mode];
+    if (!isPlainObject(group)) continue;
+    data[mode] = {};
+    for (const key of ['on', 'off']) {
+      const list = Array.isArray(group[key]) ? group[key] : [];
+      data[mode][key] = list
+        .filter((entry) => isPlainObject(entry) && isValidTime(entry.timeMs) && typeof entry.nickname === 'string')
+        .map((entry) => ({
+          nickname: normalizeNickname(entry.nickname),
+          timeMs: entry.timeMs,
+          date: typeof entry.date === 'string' ? entry.date : '',
+        }))
+        .sort((a, b) => a.timeMs - b.timeMs)
+        .slice(0, TOP_N);
+    }
+  }
+  if (typeof parsed.lastNickname === 'string') data.lastNickname = normalizeNickname(parsed.lastNickname);
+  return data;
+}
+
 export function createLeaderboard(storage = globalThis.localStorage) {
   let cache = null; // 已解析的数据对象；null 表示尚未加载
   let degraded = false; // storage 不可用（抛错）时置 true，之后全部走内存
@@ -38,7 +71,7 @@ export function createLeaderboard(storage = globalThis.localStorage) {
         } catch {
           parsed = null; // 损坏 JSON → 视为空，下次写入时自动修复
         }
-        cache = isPlainObject(parsed) ? parsed : {};
+        cache = sanitizeData(parsed);
       }
     } catch {
       degraded = true; // getItem 抛错 → 内存降级
@@ -57,6 +90,7 @@ export function createLeaderboard(storage = globalThis.localStorage) {
   }
 
   function getBucketList(mode, antiGuess) {
+    if (!LEADERBOARD_MODES.includes(mode)) return undefined;
     const data = load();
     const group = data[mode];
     if (!isPlainObject(group)) return undefined;
@@ -66,17 +100,22 @@ export function createLeaderboard(storage = globalThis.localStorage) {
 
   function getScores(mode, antiGuess) {
     const list = getBucketList(mode, antiGuess) || [];
-    // 稳定排序：相同 timeMs 保持写入顺序（后写排后）
-    return [...list].sort((a, b) => a.timeMs - b.timeMs).slice(0, TOP_N);
+    // 缓存已排序且仅包含标量字段；复制条目以防调用方改写缓存与后续存档。
+    return list.map((entry) => ({ ...entry }));
   }
 
   function isTopTen(mode, antiGuess, timeMs) {
+    if (!LEADERBOARD_MODES.includes(mode) || !isValidTime(timeMs)) return false;
     const scores = getScores(mode, antiGuess);
     if (scores.length < TOP_N) return true;
-    return timeMs <= scores[scores.length - 1].timeMs;
+    // 同分后写排在已有成绩之后，满榜并列第十实际会排第十一。
+    return timeMs < scores[scores.length - 1].timeMs;
   }
 
   function addScore(mode, antiGuess, nickname, timeMs) {
+    if (!LEADERBOARD_MODES.includes(mode) || !isValidTime(timeMs)) {
+      return { added: false, rank: undefined };
+    }
     const data = load();
     const key = antiGuess ? 'on' : 'off';
     if (!isPlainObject(data[mode])) data[mode] = { on: [], off: [] };
@@ -84,7 +123,7 @@ export function createLeaderboard(storage = globalThis.localStorage) {
     const bucket = data[mode][key];
 
     const entry = {
-      nickname: String(nickname),
+      nickname: normalizeNickname(nickname),
       timeMs,
       date: new Date().toISOString(),
     };
@@ -103,14 +142,12 @@ export function createLeaderboard(storage = globalThis.localStorage) {
 
   function getLastNickname() {
     const data = load();
-    const name = data.lastNickname;
-    if (typeof name !== 'string' || name.length === 0) return DEFAULT_NICKNAME;
-    return name.slice(0, NICKNAME_MAX_LEN);
+    return normalizeNickname(data.lastNickname);
   }
 
   function setLastNickname(name) {
     const data = load();
-    data.lastNickname = String(name).slice(0, NICKNAME_MAX_LEN);
+    data.lastNickname = normalizeNickname(name);
     persist(data);
   }
 

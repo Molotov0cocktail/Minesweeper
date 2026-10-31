@@ -93,11 +93,11 @@ describe('isTopTen', () => {
     expect(lb.isTopTen('beginner', true, 999999999)).toBe(true);
   });
 
-  it('满 10 条后更快或并列第 10 为 true，更慢为 false', () => {
+  it('满 10 条后仅更快为 true，同分后写无名次为 false', () => {
     const lb = createLeaderboard(storage);
     for (let i = 1; i <= 10; i++) lb.addScore('beginner', false, 'p', 100000 + i);
     expect(lb.isTopTen('beginner', false, 100000)).toBe(true);
-    expect(lb.isTopTen('beginner', false, 100010)).toBe(true);
+    expect(lb.isTopTen('beginner', false, 100010)).toBe(false);
     expect(lb.isTopTen('beginner', false, 100011)).toBe(false);
   });
 });
