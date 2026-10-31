@@ -1,7 +1,7 @@
 {
   "name": "minesweeper",
   "productName": "Minesweeper",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Electron 经典扫雷：防猜测模式 + 排行榜 + 独立安装器 MinesweeperSetup",
   "main": "electron/main.cjs",
   "type": "module",
@@ -9,12 +9,14 @@
     "start": "electron .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dist": "node scripts/build-dist.cjs"
+    "dist": "node scripts/build-dist.cjs",
+    "icons": "node scripts/generate-icons.cjs"
   },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8",
     "jsdom": "^25.0.0",
+    "resedit": "1.7.2",
     "vitest": "^2.1.0"
   }
 }
