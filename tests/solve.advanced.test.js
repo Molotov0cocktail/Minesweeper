@@ -133,12 +133,13 @@ describe('generateAntiGuessAdvanced：减雷移雷路径（S2）', () => {
 });
 
 describe('generateAntiGuessAdvanced：移雷接受 + 重排联动（S4）', () => {
-  it('L0={0,3,14,23}、rng=0.5 → 候选被接受后新一轮区域重排解决（预言机精确值：moves=1/attempts=7/regionAttempts=4/regions=2）', () => {
+  it('L0={0,3,14,23}、rng=0.5 → 候选被接受后新一轮区域重排解决（预言机精确值：moves=1/attempts=3/cacheHits=3/regionAttempts=4/regions=2）', () => {
     mockL0 = new Set([0, 3, 14, 23]);
     const r = generateAntiGuessAdvanced(ROWS, COLS, 4, START, { maxRegionAttempts: 3, rng: () => 0.5 });
     expect(r.ok).toBe(true);
     expect(r.moves).toBe(1);
-    expect(r.attempts).toBe(7);
+    expect(r.attempts).toBe(3);
+    expect(r.cacheHits).toBe(3);
     expect(r.regionAttempts).toBe(4);
     expect(r.regions).toBe(2);
     expect(sortArr(r.mineSet)).toEqual([2, 3, 4, 23]);
@@ -148,12 +149,14 @@ describe('generateAntiGuessAdvanced：移雷接受 + 重排联动（S4）', () =
 });
 
 describe('generateAntiGuessAdvanced：失败与预算', () => {
-  it('重排耗尽且候选无解 → 预算封顶失败：reason=region、attempts≥400、moves=0、布局保持 L0', () => {
+  it('重复布局耗尽候选预算：reason=region、只推理1次/399命中、布局保持L0', () => {
     mockL0 = new Set([0, 3, 14, 23]);
     const r = generateAntiGuessAdvanced(ROWS, COLS, 4, START, { maxRegionAttempts: 1000, rng: () => 0.5 });
     expect(r.ok).toBe(false);
     expect(r.reason).toBe('region');
-    expect(r.attempts).toBeGreaterThanOrEqual(MAX_TOTAL_DEDUCE);
+    expect(r.attempts).toBe(1);
+    expect(r.cacheHits).toBe(MAX_TOTAL_DEDUCE-1);
+    expect(r.regionAttempts).toBe(MAX_TOTAL_DEDUCE-1);
     expect(r.moves).toBe(0);
     expect(sortArr(r.mineSet)).toEqual([0, 3, 14, 23]); // 最后一次可用布局未变
     expect(isSolvable(ROWS, COLS, r.mineSet, START)).toBe(false);
@@ -177,4 +180,17 @@ describe('generateAntiGuessAdvanced：失败与预算', () => {
     expect(MAX_MOVE_CANDIDATES).toBe(100);
     expect(MAX_TOTAL_DEDUCE).toBe(400);
   });
+});
+
+it('局部试排先消除一簇再处理另一簇，不丢弃尚未全解的严格进展',()=>{
+  mockL0=new Set([9,14,21,24]);
+  const r=generateAntiGuessAdvanced(5,5,4,12,{maxRegionAttempts:3,rng:()=>0.5});
+  expect(r).toMatchObject({ok:true,moves:0,regions:2,regionAttempts:2,attempts:3,cacheHits:0});
+  expect(sortArr(r.mineSet)).toEqual([4,14,20,24]);
+});
+it('最小无雷未知簇不阻止其它簇修复：10移至5后整盘可解',()=>{
+  mockL0=new Set([0,1,10,21]);
+  const r=generateAntiGuessAdvanced(5,5,4,12,{maxRegionAttempts:3,rng:()=>0.5});
+  expect(r).toMatchObject({ok:true,moves:0,regionAttempts:1,attempts:2});
+  expect(sortArr(r.mineSet)).toEqual([0,1,5,21]);
 });

@@ -1,7 +1,8 @@
-// 扫雷可解性判定（NSS 单格 + SNS 2-集子集排除）与防猜测重排生成器
+// 扫雷可解性判定（NSS/SNS + 有界约束枚举）与防猜测局部修复
 // 纯 ESM，零 DOM，零副作用。依赖 board.js 的 neighborIndexes、randomMineSet。
 
 import { neighborIndexes, randomMineSet } from './board.js';
+import { inferForced } from './constraints.js';
 
 export const MAX_ATTEMPTS = 20;
 export const MAX_DENSITY = 0.5;
@@ -171,6 +172,35 @@ export function deduce(rows, cols, mineSet, startIdx) {
         }
       }
     }
+
+    // 廉价规则有进展时先重建前沿，避免为过期约束执行昂贵搜索。
+    if (changed) continue;
+    const undecided = [];
+    for (let i = 0; i < total; i++) {
+      if (!revealed.has(i) && !flagged.has(i)) undecided.push(i);
+    }
+    const remaining = mineSet.size - flagged.size;
+    if (undecided.length && (remaining === 0 || remaining === undecided.length)) {
+      for (const i of undecided) {
+        if (remaining === 0) revealCell(i);
+        else flagged.add(i);
+      }
+      changed = true;
+      continue;
+    }
+
+    // 只把已翻开的数字和逻辑标雷作为证据，真实雷位仅用于数字/洪泛模拟。
+    // 一个分量必须完整搜索后才能输出所有可行布局共同确定的格子；预算截断不猜。
+    const forced = inferForced(frontiers.map(f => ({ cells: [...f.cand], mines: f.need })));
+    for (const i of forced.safe) {
+      if (revealCell(i)) changed = true;
+    }
+    for (const i of forced.mines) {
+      if (!revealed.has(i) && !flagged.has(i)) {
+        flagged.add(i);
+        changed = true;
+      }
+    }
   }
 
   const solved = revealed.size === target;
@@ -256,164 +286,110 @@ export function generateAntiGuess(rows, cols, mines, startIdx, opts = {}) {
 }
 
 /**
- * 防猜测高级模式：歧义连通簇检测 → 区域重排 → 减雷移雷循环。
- *
- * 算法（详细设计 §3 伪代码）：
- *  1) density > MAX_DENSITY → { ok:false, reason:'density', mineSet:null, 统计全 0 }
- *  2) 外层循环（每轮 = 一次区域级调整）：
- *     a. deduce → solved 即成功；R ← 最小歧义簇；mR ← |mineSet ∩ R|；
- *        mR===0 → 失败；poolR ← {i ∈ R : i ∉ 首点安全区}（idx 升序）
- *        |poolR| < mR → 跳过区域重排直接进 c
- *     b. 区域重排（簇外雷固定；每轮局部计数 resetRound 从 0 起）：
- *        while resetRound < maxRegionAttempts 且 totalDeduce < MAX_TOTAL_DEDUCE:
- *          每轮重算 rMines ← |mineSet ∩ R|；poolR 内 Fisher–Yates（rng 注入）取前 rMines 个；
- *          newMineSet ← (mineSet \ (R 内雷)) ∪ 新排布；deduce → solved 即成功
- *     c. 减雷移雷：预算/上限检查；outsideStuck ← state.unknown \ R；
- *        removed ← R∩mineSet（升序）按 rng 随机取一雷；
- *        候选 ← 全盘非安全区非 R 非雷格（idx 升序）洗牌取前 MAX_MOVE_CANDIDATES；
- *        对每个候选：deduce；solved → 成功；否则 (s2.unknown \ R) ⊆ outsideStuck → 接受回外层循环
- *  3) 失败 → { ok:false, reason:'region', mineSet:<最后一次可用布局>, ...统计 }
- *
- * @param {number} rows
- * @param {number} cols
- * @param {number} mines
- * @param {number} startIdx 首次翻开格（安全区中心）
- * @param {{ maxRegionAttempts?: number, rng?: () => number }} [opts]
- * @returns {{
- *   ok: boolean,
- *   reason?: 'density'|'region',
- *   mineSet: Set<number>|null,
- *   attempts: number,
- *   regionAttempts: number,
- *   moves: number,
- *   regions: number,
- * }}
+ * 局部防猜测修复：最小歧义簇重排，保留严格进展，必要时移走一雷。
+ * 首点安全区、总雷数保持不变；不接受簇外新增歧义。重复布局复用推理结果。
+ * attempts 为真实 deduce 调用数，cacheHits 为布局缓存命中数；所有候选评估
+ * （包含缓存命中）另限 MAX_TOTAL_DEDUCE 次，防止固定随机序列反复循环。
+ * @returns {{ok:boolean,reason?:'density'|'region',mineSet:Set<number>|null,
+ *   attempts:number,regionAttempts:number,moves:number,regions:number,cacheHits:number}}
  */
 export function generateAntiGuessAdvanced(rows, cols, mines, startIdx, opts = {}) {
   const maxRegionAttempts = opts.maxRegionAttempts ?? MAX_REGION_ATTEMPTS;
   const rng = opts.rng ?? Math.random;
-
   let regionAttempts = 0;
   let moves = 0;
   let regions = 0;
   let totalDeduce = 0;
+  let trials = 0;
+  let cacheHits = 0;
+  let mineSet = null;
+  const result = (ok, reason) => ({
+    ok, ...(reason ? { reason } : {}), mineSet,
+    attempts: totalDeduce, regionAttempts, moves, regions, cacheHits,
+  });
 
-  // 密度短路：与标准模式一致，全统计 0，mineSet null
-  if (density(rows, cols, mines) > MAX_DENSITY) {
-    return {
-      ok: false,
-      reason: 'density',
-      mineSet: null,
-      attempts: 0,
-      regionAttempts: 0,
-      moves: 0,
-      regions: 0,
-    };
-  }
+  if (density(rows, cols, mines) > MAX_DENSITY) return result(false, 'density');
 
-  // 初始布局（从 board.js 具名 import，测试 mock 依赖）
-  let mineSet = randomMineSet(rows, cols, mines, startIdx, rng);
-
+  mineSet = randomMineSet(rows, cols, mines, startIdx, rng);
   const safeArea = new Set([startIdx, ...neighborIndexes(rows, cols, startIdx)]);
+  const cache = new Map();
+  const hasBudget = () => totalDeduce < MAX_TOTAL_DEDUCE && trials < MAX_TOTAL_DEDUCE;
+  const evaluate = layout => {
+    if (!hasBudget()) return null;
+    trials += 1;
+    const key = [...layout].sort((a, b) => a - b).join(',');
+    if (cache.has(key)) {
+      cacheHits += 1;
+      return cache.get(key);
+    }
+    totalDeduce += 1;
+    const state = deduce(rows, cols, layout, startIdx);
+    cache.set(key, state);
+    return state;
+  };
 
-  // Fisher–Yates 洗牌（后向，j = floor(rng()*(i+1))，与 board.randomMineSet 相同模式），原地
-  const shuffle = (pool) => {
+  const shuffle = pool => {
     for (let i = pool.length - 1; i > 0; i--) {
       const j = Math.floor(rng() * (i + 1));
-      const tmp = pool[i];
-      pool[i] = pool[j];
-      pool[j] = tmp;
+      [pool[i], pool[j]] = [pool[j], pool[i]];
     }
     return pool;
   };
 
-  // 当前 mineSet 与给定集合的交集雷数
-  const countMinesIn = (set) => {
-    let n = 0;
-    for (const i of set) if (mineSet.has(i)) n += 1;
-    return n;
-  };
-
-  while (totalDeduce < MAX_TOTAL_DEDUCE) {
-    // a. 外层循环每轮 = 一次区域级调整
-    const state = deduce(rows, cols, mineSet, startIdx);
-    totalDeduce += 1;
-    if (state.solved) {
-      return { ok: true, mineSet, attempts: totalDeduce, regionAttempts, moves, regions };
-    }
-
-    const R = state.smallest;
-    if (!R) break;
+  let state = evaluate(mineSet);
+  while (state) {
+    if (state.solved) return result(true);
+    if (!hasBudget()) break;
+    // 孤立未知安全格可能依赖其它簇的线索，无法在本簇内重排或减雷。
+    // 继续选择按既有顺序排列的最小含雷簇，避免提前放弃仍可修复的布局。
+    const region = state.clusters.find(cluster => [...cluster].some(i => mineSet.has(i)));
+    if (!region) break;
     regions += 1;
-
-    const mR = countMinesIn(R);
-    if (mR === 0) break; // 簇内无雷：既无法重排也无法减雷 → 失败
-
-    // b. 区域重排（簇外雷全部固定；每轮局部计数 resetRound 从 0 起）
-    const poolR = [...R].filter((i) => !safeArea.has(i));
-    if (poolR.length >= mR) {
-      let resetRound = 0;
-      while (resetRound < maxRegionAttempts && totalDeduce < MAX_TOTAL_DEDUCE) {
-        regionAttempts += 1;
-        resetRound += 1;
-        totalDeduce += 1;
-        // 每轮重算 rMines = 当前 mineSet ∩ R 的雷数（雷位随重排变化，雷数不变）
-        const rMines = countMinesIn(R);
-        const newMinesInR = shuffle([...poolR]).slice(0, rMines);
-        const newMineSet = new Set();
-        for (const m of mineSet) if (!R.has(m)) newMineSet.add(m);
-        for (const m of newMinesInR) newMineSet.add(m);
-        const trial = deduce(rows, cols, newMineSet, startIdx);
-        if (trial.solved) {
-          return { ok: true, mineSet: newMineSet, attempts: totalDeduce, regionAttempts, moves, regions };
-        }
-      }
-    }
-
-    // c. 减雷移雷（区域重排耗尽或簇全雷/池不足）
-    if (totalDeduce >= MAX_TOTAL_DEDUCE || moves >= MAX_MOVES) break;
-
-    // 以当前 mineSet 的推理状态为基准，失败试排的状态不能污染移雷验证。
-    const outsideStuck = new Set();
-    for (const i of state.unknown) if (!R.has(i)) outsideStuck.add(i);
-
-    // 从 R 内雷（idx 升序）中按 rng 随机取一颗移走
-    const mineInR = [];
-    for (const i of R) if (mineSet.has(i)) mineInR.push(i);
-    const removed = mineInR[Math.floor(rng() * mineInR.length)];
-
-    // 候选：全盘非安全区非 R 非雷格（idx 升序）洗牌后取前 MAX_MOVE_CANDIDATES
-    const candidatePool = [];
-    for (let i = 0; i < rows * cols; i++) {
-      if (!R.has(i) && !safeArea.has(i) && !mineSet.has(i)) candidatePool.push(i);
-    }
-    shuffle(candidatePool);
-    const candidates = candidatePool.slice(0, MAX_MOVE_CANDIDATES);
-
+    const regionMines = [...region].filter(i => mineSet.has(i));
+    if (!regionMines.length) break;
+    const outsideStuck = new Set([...state.unknown].filter(i => !region.has(i)));
+    // 状态与布局总是一起提交；失败试排不能污染后续移雷的比较基准。
+    const improves = trial => trial.unknown.size < state.unknown.size &&
+      [...trial.unknown].every(i => region.has(i) || outsideStuck.has(i));
     let accepted = false;
-    for (const c of candidates) {
-      if (totalDeduce >= MAX_TOTAL_DEDUCE) break;
-      totalDeduce += 1;
-      const m2 = new Set(mineSet);
-      m2.delete(removed);
-      m2.add(c);
-      const s2 = deduce(rows, cols, m2, startIdx);
-      if (s2.solved) {
-        mineSet = m2;
-        moves += 1;
-        return { ok: true, mineSet, attempts: totalDeduce, regionAttempts, moves, regions };
-      }
-      // 接受条件：(s2.unknown \ R) ⊆ outsideStuck —— 移雷后正常区域的新歧义
-      // 不超出移雷前正常区域既有歧义；允许移入其它既有歧义簇，禁止在干净区域制造新歧义
-      let subset = true;
-      for (const i of s2.unknown) {
-        if (!R.has(i) && !outsideStuck.has(i)) {
-          subset = false;
+
+    const pool = [...region].filter(i => !safeArea.has(i));
+    if (pool.length >= regionMines.length) {
+      for (let attempt = 0; attempt < maxRegionAttempts && hasBudget(); attempt++) {
+        regionAttempts += 1;
+        const layout = new Set([...mineSet].filter(i => !region.has(i)));
+        for (const i of shuffle([...pool]).slice(0, regionMines.length)) layout.add(i);
+        const trial = evaluate(layout);
+        if (trial.solved) {
+          mineSet = layout;
+          return result(true);
+        }
+        if (improves(trial)) {
+          mineSet = layout;
+          state = trial;
+          accepted = true;
           break;
         }
       }
-      if (subset) {
-        mineSet = m2;
+    }
+    if (accepted) continue;
+    if (!hasBudget() || moves >= MAX_MOVES) break;
+
+    const removed = regionMines[Math.floor(rng() * regionMines.length)];
+    const candidates = [];
+    for (let i = 0; i < rows * cols; i++) {
+      if (!region.has(i) && !safeArea.has(i) && !mineSet.has(i)) candidates.push(i);
+    }
+    shuffle(candidates);
+    for (const destination of candidates.slice(0, MAX_MOVE_CANDIDATES)) {
+      if (!hasBudget()) break;
+      const layout = new Set(mineSet);
+      layout.delete(removed);
+      layout.add(destination);
+      const trial = evaluate(layout);
+      if (trial.solved || improves(trial)) {
+        mineSet = layout;
+        state = trial;
         moves += 1;
         accepted = true;
         break;
@@ -421,14 +397,5 @@ export function generateAntiGuessAdvanced(rows, cols, mines, startIdx, opts = {}
     }
     if (!accepted) break;
   }
-
-  return {
-    ok: false,
-    reason: 'region',
-    mineSet,
-    attempts: totalDeduce,
-    regionAttempts,
-    moves,
-    regions,
-  };
+  return result(false, 'region');
 }
