@@ -1,6 +1,17 @@
 # AGENTS.md — Minesweeper 项目工作手册
 
-> **当前版本1.5.0（2026-10-31）**：简洁主界面、完整手柄菜单、B标雷、可自定义键位、专注视图。以下v1.5速查优先于历史记录。
+> **当前版本1.5.1（2026-10-31）**：金属地雷图元、统一应用图标、多尺寸ICO与真实exe资源嵌入。432测试/双缩放12项冒烟/E2E32项通过，本地game已更新且存档摘要不变；发布状态见doc/tasks/progress.md。
+
+### v1.5.1 维护速查
+
+- renderer/mine-glyph.js导出drawMineGlyph(ctx,x,y,size,{color?,highlight?,lost?,danger?})；8向短刺/金属球/高光，非法坐标或size安全返回，save/restore；Canvas无渐变API时回退。只有已翻开雷调用，隐藏/旗/问号不泄露雷。
+- assets/icon.svg为唯一矢量源；minesweeper.png为512×512 RGBA透明圆角；ICO含16/20/24/32/48/64/128/256八帧。npm run icons通过隐藏Electron各尺寸直接栅格化，不依赖字体/外部图片。
+- scripts/icon-resources.cjs使用显式依赖resedit@1.7.2，embedIcon(exeBuffer,icoBuffer)->Buffer、readIconGroups(exeBuffer)->[{id,lang,icons:[{width,height,data}]}]；替换所有组，保留非图标资源与overlay，不修改输入。无效二进制中文报错。
+- scripts/icon-after-pack.cjs仅修改构建输出副本并逐帧复核，禁止改node_modules Electron。setup-builder启用afterPack/win.icon但保留signAndEditExecutable:false；便携入口和被复制的游戏运行时均须验证实际PE图标。
+- build-dist先生成图标，再清理/stage/build；assets进入游戏和安装器白名单。main/setup BrowserWindow均指定assets/minesweeper.png。禁止为刷新图标删除全局Windows图标缓存，可发Shell更新通知。
+- 测试35文件432项；新增mine-glyph13/icon.assets2/icon.packaging3。集成除双缩放冒烟/E2E外，还须比对portable与安装exe八帧字节并预览16~96px地雷及应用图标。
+
+> **历史版本1.5.0（2026-10-31）**：简洁主界面、完整手柄菜单、B标雷、可自定义键位、专注视图。冲突时以上方v1.5.1为准。
 > 已发布 [Gitee v1.5.0](https://gitee.com/Molotov0coaktail/minesweeper/releases/tag/v1.5.0)，414测试/双缩放12项冒烟/E2E32项通过；公开附件HTTP200且SHA256一致。本地game已更新到1.5.0，原设置与排行榜摘要未变。
 
 ### v1.5.0 维护速查
@@ -72,7 +83,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 - 排行榜：3 模式 × 防猜测开/关 共 6 组 × 前十名（昵称+用时，按用时升序），
   localStorage 持久化，胜利后输入昵称，按**实际是否无猜**归组；自定义模式不计榜；
   侧栏「排行榜」按钮 → 主页面板展示（非弹窗）
-- **独立便携安装器 MinesweeperSetup v1.5.0**（v3：安装功能从游戏程序剥离，dist 唯一产物）：
+- **独立便携安装器 MinesweeperSetup v1.5.1**（v3：安装功能从游戏程序剥离，dist 唯一产物）：
   - 单文件便携 exe（electron-builder portable，NSIS 压缩约 70MB）；双击未安装=安装向导、
     已安装=卸载确认；`--uninstall` 静默卸载（控制面板 UninstallString 入口）；
     `--install-dir <dir>` 静默安装（附 `--no-desktop-shortcut`/`--no-startmenu-shortcut`）
@@ -160,7 +171,8 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 ```
 ├── AGENTS.md              本手册
 ├── index.html             入口（含 CSP；仅 #app/#board-wrap/#board-canvas/#scale-handle，控件由 ui.js 生成）
-├── package.json           ESM；version 1.5.0；scripts: start/test/test:watch/dist（node scripts/build-dist.cjs）
+├── package.json           ESM；version 1.5.1；scripts: start/test/test:watch/icons/dist
+├── assets/                icon.svg源 + minesweeper.png(512) / minesweeper.ico(8尺寸)
 ├── electron/              主进程（CommonJS .cjs，双应用分派）
 │   ├── main.cjs           顶部 IS_SETUP 分派（resources/game-app 存在 或 MINESWEEPER_SETUP=1 → setup.cjs）；
 │   │                      游戏侧：窗口/preload/IPC（仅 app:get-version，senderFrame 校验）/单实例锁/
@@ -181,7 +193,10 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 ├── scripts/
 │   ├── smoke.cjs          冒烟诊断：加载页面→收集 console/崩溃→截图→检查画布/DOM/
 │   │                      minesweeperAPI（深断言：hasGetVersion=true、noInstallerApi=true）→退出
-│   ├── build-dist.cjs     打包流水线（npm run dist）：清理→staging 剥离版游戏到 .build/game-app
+│   ├── generate-icons.cjs 矢量源→512透明PNG/八帧ICO（隐藏Electron逐尺寸渲染）
+│   ├── icon-resources.cjs 纯PE图标替换/读取、非图标及overlay不变量
+│   ├── icon-after-pack.cjs 构建副本图标嵌入钩子（不改开发环境Electron）
+│   ├── build-dist.cjs     打包流水线（npm run dist）：图标生成→清理→staging 剥离版游戏到 .build/game-app
 │   │                      （校验 package.json.main 与无 installer 面）→ electron-builder portable
 │   │                      （--config scripts/setup-builder.yml）→ 清理辅助产物+唯一产物校验
 │   ├── setup-builder.yml  安装器构建配置（productName MinesweeperSetup、files 白名单、
@@ -204,19 +219,20 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 │   │                      仅安装器打包，游戏包不含）
 │   └── renderer/          渲染与交互（v3 无任何安装相关代码）
 │       ├── render.js      Canvas 经典 3D 风绘制
+│       ├── mine-glyph.js  八向金属地雷图元（尺寸/状态/上下文隔离）
 │       ├── ui.js          顶栏/侧栏/主页面板/横幅/暂停遮罩/昵称
 │       ├── gamepad.js     浏览器手柄RAF轮询，返回stop清理函数
 │       ├── controller-ui.js 作用域控件导航/编辑与昵称键盘焦点
 │       ├── generation-client.js Worker生命周期/取消/超时
 │       ├── generation-worker.js Worker生成协议与标准/高级回退
 │       └── main.js        装配：鼠标/缩放/resize/设置持久化接线
-├── tests/                 Vitest 测试（32 个文件，414 用例，先于实现编写；含 setup.ui.test.js）
+├── tests/                 Vitest 测试（35 个文件，432 用例，先于实现编写；含图标资源/PE契约）
 ├── doc/                   需求/设计/任务文档（工作流产物，改功能先改这里）
 │   ├── proposal.md        需求提案（含用户决策记录）
 │   ├── high-level-design.md / detailed-design.md
 │   ├── prompt.md          控制 prompt（主 agent/subagent 规则）
 │   └── tasks/             任务文档 + progress.md（唯一进度源）
-└── dist/                  打包产物（gitignore；唯一文件 MinesweeperSetup-1.5.0-win.exe）
+└── dist/                  打包产物（gitignore；唯一文件 MinesweeperSetup-1.5.1-win.exe）
 .build/                    打包 staging（gitignore；剥离版游戏文件，脚本生成）
 .local/                    本地凭据/私有配置（gitignore；.local/gitee-token 发布令牌，严禁入库）
 ```
@@ -345,6 +361,8 @@ createLeaderboard(storage=globalThis.localStorage) -> {
 ```js
 drawCell(ctx, x, y, size, cell, gameState, opts={})   // 经典 3D 浮雕；数字配色 1蓝2绿3红4深蓝5深红6青7黑8灰
 drawBoard(ctx, game, cellSize, opts={})
+// renderer/mine-glyph.js
+drawMineGlyph(ctx, x, y, size, opts={}) // {color,highlight,lost,danger}，无效数值安全返回
 ```
 
 ### renderer/ui.js（v3 已剥离安装/卸载）
@@ -426,9 +444,10 @@ npm install   # 国内网络：ELECTRON_MIRROR=https://npmmirror.com/mirrors/ele
 npm start     # 启动游戏。注意：本机 shell 预设 ELECTRON_RUN_AS_NODE=1，需先 unset
               # （unset ELECTRON_RUN_AS_NODE && npm start）
               # 开发态启动安装器：MINESWEEPER_SETUP=1 npm start（调试 setup 向导/卸载界面）
-npm test      # 全量 Vitest（414 用例，全部必须绿）
+npm test      # 全量 Vitest（432 用例，全部必须绿）
 npm run test:watch
-npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperSetup-1.5.0-win.exe；
+npm run icons # 从assets/icon.svg重建PNG/ICO（dist会自动调用）
+npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperSetup-1.5.1-win.exe；
               # 需设上述镜像环境变量；signAndEditExecutable=false；target=portable）
 # 冒烟：unset ELECTRON_RUN_AS_NODE && npx electron scripts/smoke.cjs
 # 输出 SMOKE_RESULT JSON：rendererGone/failLoad 为 null、consoleLines 空、canvasW/H>0、
@@ -452,6 +471,7 @@ npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperS
   测试、只有设想的文件结构才能通过**（红），再改实现直至全绿（绿）。禁止编写旧代码也能
   通过的弱测试，禁止用放宽断言来让现有实现过关。
 - 测试文件与模块一一对应：`tests/<module>.test.js`。
+- 图标新增`mine-glyph.test.js`覆盖16~96px边界/Canvas状态恢复/隐藏信息安全；`icon.assets.test.js`验证SVG/PNG/ICO；`icon.packaging.test.js`用合成PE验证所有组替换、输入不变、非图标及overlay保留。集成必须检查最终portable与安装运行时实际八帧，不以配置存在代替。
 - 确定性布局注入：`solve.retries.test.js` / `game.test.js` / `solve.advanced.test.js` / `game.advanced.test.js`
   通过 `vi.mock` 注入（依赖实现必须从 board.js 具名 import `randomMineSet`、从 solve.js 具名 import
   `generateAntiGuess`/`generateAntiGuessAdvanced`，mock 才能生效）。solve.advanced.test.js 的精确数值

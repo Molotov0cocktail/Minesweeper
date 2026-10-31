@@ -1,12 +1,12 @@
 # 扫雷 Minesweeper（Electron）
 
-当前版本 **1.5.0**。主界面只保留对局信息，操作手册位于菜单的“操作说明”。手柄可操作难度、自定义参数、防猜测设置、排行榜、键位设置、昵称输入及棋盘缩放。
+当前版本 **1.5.1**。金属地雷图元与深蓝浮雕应用图标统一，支持16～256像素Windows图标和高分屏画布。主界面只保留对局信息，操作手册位于菜单的“操作说明”。手柄可操作难度、自定义参数、防猜测设置、排行榜、键位设置、昵称输入及棋盘缩放。
 
 默认 A 确认/翻开、B 返回/标雷、X 菜单、Start 暂停，长按 Y 重开，R3 专注视图，View 操作说明。菜单“手柄与键位”可修改七项绑定及恢复默认，冲突键自动交换。
 
 顶栏“专注”、F10 或手柄 R3 可切为仅棋盘、进度和雷数/时间；退出按钮或菜单可恢复。手柄设置与视图偏好沿用原存储键保存。
 
-[下载 Windows 安装器](https://gitee.com/Molotov0coaktail/minesweeper/releases/download/v1.5.0/MinesweeperSetup-1.5.0-win.exe)（70.9 MB）。2026-10-31已发布，414项测试、双缩放12项冒烟、32项安装验收通过；公开附件校验一致。本地game副本已更新且原存档摘要未变。详细记录见 `doc/tasks/progress.md`。
+Windows 安装器 v1.5.1 已完成验收（71.3 MB）；432项测试、双缩放12项冒烟、32项真实安装验收通过。本地game已更新，原设置和排行榜摘要不变。发布状态见 `doc/tasks/progress.md`。
 
 基于 Electron 的经典扫雷桌面程序，支持自定义棋盘、拖动缩放、可配置防猜测模式（标准/高级）、
 三种标准模式排行榜。安装/卸载由**独立便携安装器 MinesweeperSetup** 负责（游戏程序本体已剥离安装功能）。
@@ -34,7 +34,7 @@
 - **排行榜**：三种标准模式各分「防猜测开 / 关」两组，共 6 组；每组记录前十名昵称与用时（按用时升序）；
   侧栏「排行榜」按钮在主页展示榜单；胜利后输入昵称，成绩按"实际是否无猜"归组；数据存 localStorage；
   自定义模式不计入排行榜
-- **独立便携安装器 MinesweeperSetup**（v1.5.0，单文件 exe，游戏程序不含任何安装代码）：
+- **独立便携安装器 MinesweeperSetup**（v1.5.1，单文件 exe，游戏程序不含任何安装代码）：
   - 双击未安装 → 安装向导：选择安装地址（默认 `D:\Minesweeper`，无 D 盘回退其他盘）、
     勾选桌面/开始菜单快捷方式 → 确认后复制完整运行时（setup exe 重命名为 `Minesweeper.exe`，
     内嵌游戏文件映射为 `resources/app/`）+ 写卸载注册表项 + 创建快捷方式
@@ -73,11 +73,12 @@ npm run test:watch # 监听模式
 
 测试采用"测试先行"：所有行为契约先写成 `tests/`，再逐个实现。覆盖棋盘模型、可解性算法、
 防猜测重排（标准/高级）、游戏状态机/计时、排行榜存取、设置持久化、安装清单/卸载计划/错误分类、
-setup 安装向导 UI、游戏 UI 控件与画布绘制（现有 414 用例，含装配与冒烟失败门禁）。
+setup 安装向导 UI、游戏 UI 控件与画布绘制（现有 432 用例，含地雷图元/图标资源/PE不变量）。
 
 ## 打包（独立便携安装器）
 
 ```bash
+npm run icons      # 从assets/icon.svg重建PNG/ICO；打包时自动执行
 npm run dist       # 生成 dist/MinesweeperSetup-<版本>-win.exe（唯一产物，便携单文件）
 ```
 
@@ -88,10 +89,10 @@ npm run dist       # 生成 dist/MinesweeperSetup-<版本>-win.exe（唯一产�
 > npm run dist
 > ```
 > 本机未配置代码签名，构建已配置 `win.signAndEditExecutable: false`。
-> 流水线（`scripts/build-dist.cjs`）：清理 dist/.build → staging 剥离版游戏文件
+> 流水线（`scripts/build-dist.cjs`）：生成应用图标 → 清理 dist/.build → staging 剥离版游戏文件
 > （`src/core/installer.js` 与 setup 侧 electron 文件不进游戏包，自动校验）→
-> electron-builder portable（NSIS 压缩，约 70MB）→ 清理辅助产物、校验 dist 唯一产物。
-> **使用方式**：把 `MinesweeperSetup-1.5.0-win.exe` 发给用户，双击即用——
+> electron-builder portable（afterPack将图标写入运行时、NSIS入口使用同一ICO，约71MB）→ 清理辅助产物、校验 dist 唯一产物。
+> **使用方式**：把 `MinesweeperSetup-1.5.1-win.exe` 发给用户，双击即用——
 > 未安装走安装向导；已安装显示卸载确认。setup 自身不留任何印记（删掉 exe 即清理完毕）。
 
 ## 安装与卸载入口
@@ -146,10 +147,15 @@ npm run dist       # 生成 dist/MinesweeperSetup-<版本>-win.exe（唯一产�
 │   │                      #   仅安装器打包，游戏不含）
 │   └── renderer/      # 渲染与交互层（无任何安装相关代码）
 │       ├── render.js      # Canvas 经典 3D 风绘制
+│       ├── mine-glyph.js  # 金属地雷矢量图元
 │       ├── ui.js          # 顶栏/侧栏/主页面板/弹窗/横幅
 │       └── main.js        # 事件装配/缩放/resize/设置持久化接线
 ├── styles/main.css    # 经典扫雷风格样式（侧栏/面板美化）
+├── assets/            # icon.svg矢量源 + 512 PNG / 八尺寸ICO
 ├── scripts/
+│   ├── generate-icons.cjs # npm run icons；各尺寸直接从SVG渲染
+│   ├── icon-resources.cjs # PE图标替换/读取，不改其他资源
+│   ├── icon-after-pack.cjs # 构建副本图标嵌入并复核
 │   ├── smoke.cjs          # 冒烟诊断（含深断言：无 installer 面）
 │   ├── build-dist.cjs     # 打包流水线（清理→staging→portable→校验）
 │   ├── setup-builder.yml  # 安装器构建配置（electron-builder portable）
