@@ -16,7 +16,7 @@ function collectSmokeFailures(result = {}) {
     if (c[key] !== true) failures.push(`页面接口检查失败：${key}`);
   }
   if (c.bodyClass?.includes('sidebar-open')) failures.push('默认侧栏未收起');
-  for (const key of ['modeFits', 'keyboardMark', 'keyboardReveal', 'pauseRestart', 'sidebar', 'leaderboard', 'workerGeneration', 'controller']) {
+  for (const key of ['modeFits', 'keyboardMark', 'keyboardReveal', 'pauseRestart', 'sidebar', 'leaderboard', 'workerGeneration', 'controller', 'controllerMenu', 'rebind', 'focusView', 'helpPage']) {
     if (result.checks?.[key] !== true) failures.push(`交互检查失败：${key}`);
   }
   return failures;
@@ -109,10 +109,26 @@ async function runSmoke() {
         const p={id:'模拟标准手柄',index:0,connected:true,mapping:'standard',axes:[0,0],buttons:Array.from({length:16},()=>({pressed:false,value:0}))};
         Object.defineProperty(navigator,'getGamepads',{configurable:true,value:()=>[p]});
         await frames();
-        p.buttons[15].pressed=true; await frames(); p.buttons[15].pressed=false; await frames();
-        p.buttons[2].pressed=true; await frames(); p.buttons[2].pressed=false; await frames();
+        const pulse=async button=>{p.buttons[button].pressed=true;await frames();p.buttons[button].pressed=false;await frames();};
+        await pulse(15);await pulse(1);
         const controller=$('controller-status').textContent.includes('模拟标准手柄') && $('mine-count').textContent==='9' && c.getAttribute('aria-label').includes('第 2 列') && c.getAttribute('aria-label').includes('旗');
-        return {workerGeneration,controller};
+        await pulse(2);await pulse(13);await pulse(0);
+        // 从选中的中级向下走到自定义行数，用右方向真实编辑数值。
+        await pulse(13);await pulse(13);await pulse(15);
+        const controllerMenu=document.body.classList.contains('sidebar-open') && $('game-meta').textContent.includes('中级') && $('custom-rows').value==='10';
+        const seek=async id=>{for(let i=0;i<35;i++){if(document.activeElement.id===id)return;await pulse(13);}throw Error('手柄导航未到达 '+id);};
+        await seek('leaderboard-open');await pulse(0);const lbOpened=!$('leaderboard-modal').classList.contains('hidden');await pulse(1);
+        await pulse(8);const helpOpened=!$('help-page').classList.contains('hidden') && $('board-wrap').classList.contains('hidden');await pulse(1);
+        const helpPage=lbOpened && helpOpened && $('help-page').classList.contains('hidden') && !document.querySelector('.ms-main > footer');
+        await pulse(11);const focused=document.body.classList.contains('focus-view') && getComputedStyle(document.querySelector('.ms-topbar')).display==='none' && getComputedStyle($('game-progress')).display!=='none';await pulse(11);
+        const focusView=focused && !document.body.classList.contains('focus-view');
+        await pulse(2);await seek('controls-open');await pulse(0);await seek('binding-mark');await pulse(15);
+        const swapped=$('binding-mark').value==='2' && $('binding-menu').value==='1';
+        // 新mark键X关闭设置，再按X须给棋盘标记；菜单随交换改为B。
+        await pulse(2);await pulse(2);const remappedMark=$('mine-count').textContent==='39';
+        await pulse(1);await seek('controls-open');await pulse(0);await seek('bindings-reset');await pulse(0);
+        const reset=$('binding-mark').value==='1' && $('binding-menu').value==='2';await pulse(1);
+        return {workerGeneration,controller,controllerMenu,rebind:swapped&&remappedMark&&reset,focusView,helpPage};
       } finally {
         window.Worker=NativeWorker;
         if(gamepadDescriptor) Object.defineProperty(navigator,'getGamepads',gamepadDescriptor); else delete navigator.getGamepads;
@@ -122,17 +138,17 @@ async function runSmoke() {
     result.failures = failures;
     exitCode = failures.length ? 1 : 0;
     fs.writeFileSync(path.join(__dirname, '..', 'smoke-screenshot.png'), (await win.webContents.capturePage()).toPNG());
+    await win.webContents.executeJavaScript("document.getElementById('focus-toggle').click()");
+    fs.writeFileSync(path.join(__dirname, '..', 'smoke-focus-screenshot.png'), (await win.webContents.capturePage()).toPNG());
     console.log('SMOKE_RESULT ' + JSON.stringify(result));
   } catch (error) {
     console.error('冒烟失败：' + (error?.stack || String(error)));
   } finally {
     if (win && !win.isDestroyed()) win.destroy();
-    app.once('will-quit', () => {
-      try { fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
-      catch { /* 不影响退出码；系统临时目录可由系统回收。 */ }
-      process.exitCode = exitCode;
-    });
-    app.quit();
+    try { fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); }
+    catch { /* Chromium句柄尚未释放时，由验收收尾回收临时目录。 */ }
+    // Electron app.quit会覆盖普通Node的exitCode，必须使用原生退出接口。
+    app.exit(exitCode);
   }
 }
 

@@ -1,6 +1,22 @@
 # AGENTS.md — Minesweeper 项目工作手册
 
-> **当前版本 1.4.0（2026-10-31）**：标准手柄操作、双向子集推理、可取消Worker首点生成；优先遵守本段及detailed-design顶部v1.4契约。
+> **当前版本1.5.0（2026-10-31）**：简洁主界面、完整手柄菜单、B标雷、可自定义键位、专注视图。以下v1.5速查优先于历史记录，最终发布和本地更新状态见progress.md。
+
+### v1.5.0 维护速查
+
+- 默认DEFAULT_GAMEPAD_BINDINGS={reveal:0,mark:1,menu:2,pause:9,restart:3,focus:11,help:8}；B标雷/界面返回，X菜单，R3专注，View说明。方向固定；7动作可绑0~11互异整数，冲突交换；重开仍长按800ms。
+- core/gamepad新增isValidGamepadBindings/rebindGamepad，mapper.setBindings仅值变化时中立重锁；renderer/gamepad新增getBindings回调动态读取。
+- settings新增gamepadBindings/focusView:false，旧档补默认、坏map整组回退、非法更新忽略，get/update/reset均深复制map，不更换存储键。
+- renderer/controller-ui.js导出navigateControls(scope,action)，作用域控件焦点/scroll、number stepUp/stepDown、select change、checkbox/按钮确认、10列昵称键盘；网格任何边缘可进入输入或提交，不能困焦点。
+- UI新增handleController/hasControllerContext、showHelp/showControls/closePage、setGamepadBindings/setFocusView/getFocusView/setBoardSize。主页面无常驻教程或手柄提示；#controls-help/#ag-settings-hint在#help-page，#controller-status在#controls-page。
+- 新DOM：#help-open/page/back，#controls-open/page/back，#binding-<7action>、#bindings-reset，#nickname-keyboard[data-key]，#focus-toggle/exit/hud/mine-count/timer，#board-size。昵称屏幕键盘仅手柄操作时显示，物理键盘不受影响。
+- main先将手柄交UI消费，设置输入不穿透棋盘；F1说明/F10专注/Escape返回。视图只改展示不重开，手柄键位/专注持久化。侧栏缩放0自动/16~48固定，手动缩放保留到新局，选自动恢复窗口适配。
+- body.focus-view隐藏顶栏/侧栏/规格，仅棋盘、进度与紧凑雷数/时间/退出；退出按钮、F10、R3、X菜单均可恢复。模态不允许专注切换穿透。
+- smoke新增controllerMenu/rebind/focusView/helpPage，共12项；必须app.exit(exitCode)，普通process.exitCode+app.quit无法保证Electron失败退出码。生成normal/focus两张临时截图，均须清理，不入库。
+- 测试32文件414项；新增gamepad.bindings/settings.input/controller-ui/ui.pages/main.interface；旧默认映射/默认设置精确断言随新契约更新。硬件未连接时不宣称实体实测。
+
+
+> **历史版本 1.4.0（2026-10-31）**：标准手柄操作、双向子集推理、可取消Worker首点生成；冲突时以顶部v1.5契约为准。
 > 已发布 [Gitee v1.4.0](https://gitee.com/Molotov0coaktail/minesweeper/releases/tag/v1.4.0)，371测试/双缩放冒烟/安装E2E32项通过，公开附件HTTP200且SHA256一致。本地D:\Minesweeper\game已真正更新到1.4.0，存档摘要未变；硬件未连接，手柄仅模拟验收。
 
 ### v1.4.0 维护速查
@@ -55,7 +71,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 - 排行榜：3 模式 × 防猜测开/关 共 6 组 × 前十名（昵称+用时，按用时升序），
   localStorage 持久化，胜利后输入昵称，按**实际是否无猜**归组；自定义模式不计榜；
   侧栏「排行榜」按钮 → 主页面板展示（非弹窗）
-- **独立便携安装器 MinesweeperSetup v1.4.0**（v3：安装功能从游戏程序剥离，dist 唯一产物）：
+- **独立便携安装器 MinesweeperSetup v1.5.0**（v3：安装功能从游戏程序剥离，dist 唯一产物）：
   - 单文件便携 exe（electron-builder portable，NSIS 压缩约 70MB）；双击未安装=安装向导、
     已安装=卸载确认；`--uninstall` 静默卸载（控制面板 UninstallString 入口）；
     `--install-dir <dir>` 静默安装（附 `--no-desktop-shortcut`/`--no-startmenu-shortcut`）
@@ -143,7 +159,7 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 ```
 ├── AGENTS.md              本手册
 ├── index.html             入口（含 CSP；仅 #app/#board-wrap/#board-canvas/#scale-handle，控件由 ui.js 生成）
-├── package.json           ESM；version 1.4.0；scripts: start/test/test:watch/dist（node scripts/build-dist.cjs）
+├── package.json           ESM；version 1.5.0；scripts: start/test/test:watch/dist（node scripts/build-dist.cjs）
 ├── electron/              主进程（CommonJS .cjs，双应用分派）
 │   ├── main.cjs           顶部 IS_SETUP 分派（resources/game-app 存在 或 MINESWEEPER_SETUP=1 → setup.cjs）；
 │   │                      游戏侧：窗口/preload/IPC（仅 app:get-version，senderFrame 校验）/单实例锁/
@@ -189,16 +205,17 @@ Electron 经典扫雷桌面程序（Windows）。核心特性：
 │       ├── render.js      Canvas 经典 3D 风绘制
 │       ├── ui.js          顶栏/侧栏/主页面板/横幅/暂停遮罩/昵称
 │       ├── gamepad.js     浏览器手柄RAF轮询，返回stop清理函数
+│       ├── controller-ui.js 作用域控件导航/编辑与昵称键盘焦点
 │       ├── generation-client.js Worker生命周期/取消/超时
 │       ├── generation-worker.js Worker生成协议与标准/高级回退
 │       └── main.js        装配：鼠标/缩放/resize/设置持久化接线
-├── tests/                 Vitest 测试（27 个文件，371 用例，先于实现编写；含 setup.ui.test.js）
+├── tests/                 Vitest 测试（32 个文件，414 用例，先于实现编写；含 setup.ui.test.js）
 ├── doc/                   需求/设计/任务文档（工作流产物，改功能先改这里）
 │   ├── proposal.md        需求提案（含用户决策记录）
 │   ├── high-level-design.md / detailed-design.md
 │   ├── prompt.md          控制 prompt（主 agent/subagent 规则）
 │   └── tasks/             任务文档 + progress.md（唯一进度源）
-└── dist/                  打包产物（gitignore；唯一文件 MinesweeperSetup-1.4.0-win.exe）
+└── dist/                  打包产物（gitignore；唯一文件 MinesweeperSetup-1.5.0-win.exe）
 .build/                    打包 staging（gitignore；剥离版游戏文件，脚本生成）
 .local/                    本地凭据/私有配置（gitignore；.local/gitee-token 发布令牌，严禁入库）
 ```
@@ -279,7 +296,8 @@ game.on('win'|'lose'|'warning'|'generated', cb)
 ### core/settings.js（v2）
 ```js
 SETTINGS_KEY = 'minesweeper.settings.v1'
-DEFAULT_SETTINGS = { antiGuess:true, antiGuessMethod:'standard', maxAttempts:20, maxRegionAttempts:20 }
+DEFAULT_SETTINGS = { antiGuess:true, antiGuessMethod:'standard', maxAttempts:20, maxRegionAttempts:20,
+                     gamepadBindings:{reveal:0,mark:1,menu:2,pause:9,restart:3,focus:11,help:8}, focusView:false }
 LIMITS = { maxAttempts:[1,200], maxRegionAttempts:[1,200] }
 createSettings(storage=globalThis.localStorage) -> { get()->拷贝, update(patch)->拷贝, reset()->拷贝 }
 // 读取全字段 sanitize（损坏/越界回退默认）；update 非法字段忽略保留现值；storage 抛错内存降级
@@ -332,7 +350,9 @@ drawBoard(ctx, game, cellSize, opts={})
 ```js
 createUI(host, deps) -> { setMineCount, setTime, setPauseOverlay, setAntiGuessActive,
                           showBanner, hideBanner, showNicknamePrompt, showLeaderboard, setCustomError,
-                          setAntiGuessSettings, getSidebarOpen, setGameStatus, setControllerStatus, resetTransient, destroy }
+                          setAntiGuessSettings, getSidebarOpen, setGameStatus, setControllerStatus,
+                          handleController, hasControllerContext, showHelp, showControls, closePage,
+                          setGamepadBindings, setFocusView, getFocusView, setBoardSize, resetTransient, destroy }
 deps = { leaderboard, getState, actions:{ selectMode, applyCustom, toggleAntiGuess,
                                           pause, resume, restart, submitNickname,
                                           toggleSidebar, setAntiGuessMethod, setMaxAttempts,
@@ -404,9 +424,9 @@ npm install   # 国内网络：ELECTRON_MIRROR=https://npmmirror.com/mirrors/ele
 npm start     # 启动游戏。注意：本机 shell 预设 ELECTRON_RUN_AS_NODE=1，需先 unset
               # （unset ELECTRON_RUN_AS_NODE && npm start）
               # 开发态启动安装器：MINESWEEPER_SETUP=1 npm start（调试 setup 向导/卸载界面）
-npm test      # 全量 Vitest（371 用例，全部必须绿）
+npm test      # 全量 Vitest（414 用例，全部必须绿）
 npm run test:watch
-npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperSetup-1.4.0-win.exe；
+npm run dist  # 打包独立便携安装器到 dist/（唯一产物 MinesweeperSetup-1.5.0-win.exe；
               # 需设上述镜像环境变量；signAndEditExecutable=false；target=portable）
 # 冒烟：unset ELECTRON_RUN_AS_NODE && npx electron scripts/smoke.cjs
 # 输出 SMOKE_RESULT JSON：rendererGone/failLoad 为 null、consoleLines 空、canvasW/H>0、

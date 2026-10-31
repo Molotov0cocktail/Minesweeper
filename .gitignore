@@ -18,6 +18,7 @@ game/
 
 # Smoke-test artifacts
 smoke-screenshot.png
+smoke-focus-screenshot.png
 
 # Logs
 *.log
