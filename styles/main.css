@@ -531,6 +531,11 @@ button:not(:disabled):hover {
   filter: brightness(1.06);
 }
 
+#app[data-controller-active="true"] :is(button, input, select):focus {
+  outline: 2px solid #174a8b;
+  outline-offset: 2px;
+}
+
 /* ---------- 排行榜主页面板 ---------- */
 .ms-panel {
   position: fixed;
@@ -708,16 +713,109 @@ button:not(:disabled):hover {
 #game-progress::-moz-progress-bar { background: #35567e; }
 
 .ms-controls-help {
-  text-align: center;
   color: #4d5b69;
-  font-size: 12px;
-  line-height: 1.7;
+  font-size: 14px;
+  line-height: 1.8;
 }
 
 .ms-controls-help p { margin: 3px 0; }
 .ms-controls-help details { margin-top: 8px; }
 .ms-controls-help summary { cursor: pointer; color: #294b71; }
 .ms-controls-help details p { text-align: left; margin-top: 8px; }
+
+/* ---------- 独立说明与键位页面 ---------- */
+.ms-page {
+  align-self: center;
+  width: min(100%, 760px);
+  padding: 24px;
+  flex: none;
+  color: #27374b;
+  background: #f7f8f7;
+  border: 1px solid #b5bec7;
+  box-shadow: inset 1px 1px 0 #fff, 0 3px 12px #26334412;
+}
+
+.ms-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #d1d8de;
+}
+
+.ms-page h1 { font-size: 21px; margin: 0; }
+.ms-page h2 { font-size: 15px; margin: 22px 0 8px; color: #294b71; }
+.ms-page .ms-controls-help { width: 100%; }
+.ms-page .ms-hint { font-size: 13px; }
+.ms-page button { padding: 6px 12px; }
+
+.ms-help-bindings { margin: 12px 0 18px; }
+.ms-help-bindings > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 6px 0;
+  border-bottom: 1px solid #e0e5e9;
+}
+.ms-help-bindings dt { font-size: 13px; }
+.ms-help-bindings dd { margin: 0; font-family: Consolas, monospace; color: #294b71; }
+
+.ms-bindings { display: grid; gap: 12px; margin: 18px 0; }
+.ms-binding-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e0e5e9;
+}
+.ms-binding-field select {
+  width: 180px;
+  min-height: 30px;
+  padding: 4px 8px;
+  font: inherit;
+  background: #fff;
+  border: 1px solid #8494a4;
+  color: #27374b;
+}
+
+/* ---------- 按需昵称屏幕键盘 ---------- */
+.ms-nickname-keyboard {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 5px;
+  padding-top: 16px;
+}
+.ms-nickname-keyboard button { min-width: 0; padding: 7px 1px; font-size: 12px; }
+#nickname-modal .modal:has(#nickname-keyboard:not(.hidden)) { width: min(560px, 92vw); max-width: 92vw; }
+
+/* ---------- 专注视图：保留棋盘、进度及紧凑HUD ---------- */
+.ms-focus-hud {
+  display: flex;
+  align-self: center;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px 24px;
+  flex: none;
+  color: #40556b;
+  font-size: 12px;
+}
+.ms-focus-hud b { font-family: Consolas, monospace; font-size: 17px; margin-left: 7px; font-variant-numeric: tabular-nums; }
+#focus-exit { padding: 4px 9px; font-size: 12px; }
+body.focus-view .ms-topbar,
+body.focus-view #sidebar,
+body.focus-view #help-page,
+body.focus-view #controls-page,
+body.focus-view .ms-game-heading,
+body.focus-view .ms-progress-heading { display: none !important; }
+body.focus-view .ms-main { margin-left: 0; padding-top: 16px; }
+body.focus-view .ms-game-summary { padding: 0; border: 0; background: transparent; box-shadow: none; }
+body.focus-view #game-progress { height: 5px; }
 
 kbd {
   padding: 1px 4px;
@@ -758,6 +856,8 @@ summary:focus-visible {
   .ms-main { padding: 14px 10px; gap: 14px; }
   .ms-game-summary { padding: 10px; }
   .ms-panel { right: 12px; }
+  .ms-page { padding: 16px; }
+  .ms-page h1 { font-size: 18px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -6,8 +6,13 @@
 // 注：v2 新增 actions 一律可选链调用（actions.toggleSidebar?.() 等），
 //     保证既有 ui.test.js 的 deps（无这些 action）下不抛错。
 
+import { DEFAULT_GAMEPAD_BINDINGS, isValidGamepadBindings, rebindGamepad } from '../core/gamepad.js';
+import { navigateControls } from './controller-ui.js';
+
 export const MODE_NAMES = { beginner: '初级', intermediate: '中级', expert: '高级' };
 export const ANTI_NAMES = { on: '防猜测开', off: '防猜测关' };
+const BINDING_NAMES = { reveal: '翻开 / 确认', mark: '标记 / 返回', menu: '菜单', pause: '暂停 / 继续', restart: '长按重开', focus: '专注视图', help: '操作说明' };
+const BUTTON_NAMES = ['A / 叉', 'B / 圆', 'X / 方块', 'Y / 三角', 'LB', 'RB', 'LT', 'RT', 'Back / Select', 'Start', 'L3', 'R3'];
 
 /** 毫秒 → "MM:SS"；超过 1 小时显示 "h:MM:SS"。 */
 export function formatTime(ms) {
@@ -29,11 +34,14 @@ export function formatTime(ms) {
  *   setMineCount(n), setTime(ms), setPauseOverlay(visible), setAntiGuessActive(active),
  *   showBanner(msg), hideBanner(), showNicknamePrompt(info), showLeaderboard(hint?), setCustomError(msg),
  *   setAntiGuessSettings({method, maxAttempts, maxRegionAttempts}), getSidebarOpen(),
- *   setGameStatus({state, mode, rows, cols, mines, revealedCount}), setControllerStatus(status), resetTransient(), destroy()
+ *   setGameStatus({state, mode, rows, cols, mines, revealedCount}), setControllerStatus(status),
+ *   handleController(action), hasControllerContext(), showHelp(), showControls(), closePage(),
+ *   setGamepadBindings(map), setBoardSize(size), setFocusView(value), getFocusView(), resetTransient(), destroy()
  * }}
  */
 export function createUI(host, deps) {
   const actions = deps.actions || {};
+  const hadFocusView = document.body.classList.contains('focus-view');
   const cleanups = [];
   function listen(target, type, handler) {
     target.addEventListener(type, handler);
@@ -53,6 +61,7 @@ export function createUI(host, deps) {
       <span class="ms-status">时间：<b id="timer">00:00</b></span>
     </div>
     <div class="ms-topbar-actions">
+      <button type="button" id="focus-toggle" title="专注视图（F10）" aria-pressed="false">专注</button>
       <button type="button" id="pause-btn" title="暂停 / 继续（P）">暂停</button>
       <button type="button" id="restart-btn" title="重新开始（F2）">重新开始</button>
     </div>
@@ -82,6 +91,15 @@ export function createUI(host, deps) {
       </div>
     </div>
     <div class="ms-side-section">
+      <h3 class="ms-side-title">显示</h3>
+      <label class="ms-field">格子大小
+        <select id="board-size">
+          <option value="0">自动适配</option>
+          ${Array.from({ length: 33 }, (_, index) => index + 16).map(size => `<option value="${size}">${size} 像素</option>`).join('')}
+        </select>
+      </label>
+    </div>
+    <div class="ms-side-section">
       <h3 class="ms-side-title">防猜测</h3>
       <label class="ms-toggle"><input id="anti-guess-toggle" type="checkbox" checked> 开启防猜测</label>
       <span id="antiguess-status" class="ms-antiguess">防猜测：开启</span>
@@ -94,11 +112,12 @@ export function createUI(host, deps) {
         </label>
         <label class="ms-field">最大重置轮数 <input id="ag-max-attempts" type="number" min="1" max="200" value="20"></label>
         <label class="ms-field">区域重排次数 <input id="ag-region-attempts" type="number" min="1" max="200" value="20" disabled></label>
-        <p id="ag-settings-hint" class="ms-hint">标准：开局不满足可解性时整盘重排，直至无猜开局；高级：优先仅重排猜雷区域，重排预算更省。</p>
       </div>
     </div>
     <div class="ms-side-actions">
       <button type="button" id="leaderboard-open" class="ms-btn ms-btn-primary">排行榜</button>
+      <button type="button" id="help-open" class="ms-btn">操作说明</button>
+      <button type="button" id="controls-open" class="ms-btn">手柄与键位</button>
     </div>
   `;
 
@@ -123,25 +142,54 @@ export function createUI(host, deps) {
     <div class="ms-progress-heading"><span>安全格进度</span><span id="game-progress-text">0 / 0</span></div>
     <progress id="game-progress" max="1" value="0" aria-label="已翻开的安全格"></progress>
   `;
-  const help = document.createElement('footer');
-  help.id = 'controls-help';
-  help.className = 'ms-controls-help';
-  help.innerHTML = `
-    <p>左键翻开 · 右键标记 · 首点安全</p>
-    <p><kbd>方向键</kbd> 移动 <kbd>Enter / 空格</kbd> 翻开 <kbd>F</kbd> 标记</p>
-    <p><kbd>P</kbd> 暂停 / 继续 <kbd>F2</kbd> 重开 · 拖动右下角缩放</p>
-    <p id="controller-status" role="status" aria-live="polite">手柄未连接 · 连接后按一下按键识别</p>
-    <details><summary>数字格与暂停说明</summary>
-      <p>手柄：十字键 / 左摇杆移动，A / 叉翻开或确认，X / 方块标记，Start 暂停 / 继续；长按 Y / 三角 800 毫秒重开。昵称输入时 A 提交、B / 圆取消。仅支持标准布局。</p>
-      <p>左键数字格：相邻旗数等于数字时，翻开周围未标旗格。右键数字格：未开格数等于数字时，批量标旗。键盘翻开与标记支持相同操作。</p>
-      <p>按 Tab 聚焦棋盘后可使用方向键。切出窗口自动暂停，返回后手动继续。</p>
-    </details>
+  const focusHud = document.createElement('div');
+  focusHud.id = 'focus-hud';
+  focusHud.className = 'ms-focus-hud hidden';
+  focusHud.innerHTML = `
+    <span>剩余雷数 <b id="focus-mine-count">0</b></span>
+    <span>时间 <b id="focus-timer">00:00</b></span>
+    <button type="button" id="focus-exit" title="退出专注（F10 / Escape）">退出专注</button>
+  `;
+  const helpPage = document.createElement('section');
+  helpPage.id = 'help-page';
+  helpPage.className = 'ms-page hidden';
+  helpPage.setAttribute('aria-labelledby', 'help-title');
+  helpPage.innerHTML = `
+    <div class="ms-page-header"><h1 id="help-title">操作说明</h1><button type="button" id="help-back">返回棋盘</button></div>
+    <div id="controls-help" class="ms-controls-help">
+      <h2>鼠标与键盘</h2>
+      <p>左键翻开，右键依次标记旗、问号、取消。首点及周围格子必定安全。</p>
+      <p><kbd>方向键</kbd> 移动 <kbd>Enter / 空格</kbd> 翻开 <kbd>F</kbd> 标记</p>
+      <p><kbd>P</kbd> 暂停 / 继续 <kbd>F2</kbd> 重开 <kbd>F10</kbd> 专注 <kbd>F1</kbd> 说明</p>
+      <p>按 Tab 聚焦棋盘后可使用方向键。拖动右下角缩放，切出窗口自动暂停。</p>
+      <h2>数字格</h2>
+      <p>相邻旗数等于数字时，左键翻开周围未标旗格。未开格数等于数字时，右键批量标旗。键盘和手柄的翻开、标记也支持这些操作。</p>
+      <h2>手柄</h2>
+      <p>十字键 / 左摇杆移动。棋盘内标记雷，菜单内同一按键返回；长按重开需保持 800 毫秒。昵称弹窗按方向键打开屏幕键盘。</p>
+      <dl class="ms-help-bindings">${Object.entries(BINDING_NAMES).map(([action, label]) => `<div><dt>${label}</dt><dd id="help-binding-${action}"></dd></div>`).join('')}</dl>
+      <button type="button" id="help-controls-open">修改手柄键位</button>
+      <h2>防猜测</h2>
+      <p id="ag-settings-hint" class="ms-hint">标准：开局不满足可解性时整盘重排，直至无猜开局；高级：优先仅重排猜雷区域，失败时回退标准。雷密度过高、次数耗尽或生成失败时，会关闭防猜测并提示。</p>
+    </div>
+  `;
+  const controlsPage = document.createElement('section');
+  controlsPage.id = 'controls-page';
+  controlsPage.className = 'ms-page hidden';
+  controlsPage.setAttribute('aria-labelledby', 'controls-title');
+  controlsPage.innerHTML = `
+    <div class="ms-page-header"><h1 id="controls-title">手柄与键位</h1><button type="button" id="controls-back">返回棋盘</button></div>
+    <p id="controller-status" role="status" aria-live="polite">手柄未连接</p>
+    <div class="ms-bindings">${Object.entries(BINDING_NAMES).map(([action, label]) => `<label class="ms-binding-field">${label}<select id="binding-${action}">${BUTTON_NAMES.map((name, index) => `<option value="${index}">${name}</option>`).join('')}</select></label>`).join('')}</div>
+    <p class="ms-hint">方向始终使用十字键 / 左摇杆。按键重复时会交换原有绑定；改键后松开所有按键，再继续操作。</p>
+    <button type="button" id="bindings-reset">恢复默认键位</button>
   `;
   const boardWrap = host.querySelector('#board-wrap');
   main.appendChild(banner);
+  main.appendChild(focusHud);
   main.appendChild(summary);
   if (boardWrap) main.appendChild(boardWrap);
-  main.appendChild(help);
+  main.appendChild(helpPage);
+  main.appendChild(controlsPage);
 
   host.appendChild(topbar);
   host.appendChild(sidebar);
@@ -161,7 +209,6 @@ export function createUI(host, deps) {
   pauseOverlay.innerHTML = `
     <div class="modal">
       <h2 id="pause-title" class="modal-title">已暂停</h2>
-      <p class="modal-hint">休息一下。棋盘已遮盖，计时已冻结。</p>
       <div class="modal-actions">
         <button type="button" id="resume-btn">继续</button>
       </div>
@@ -179,8 +226,14 @@ export function createUI(host, deps) {
   nicknameModal.innerHTML = `
     <div class="modal">
       <h2 id="nickname-title" class="modal-title">恭喜胜利！</h2>
-      <p class="modal-hint">成绩进入该榜单前 10 名，请输入昵称：</p>
       <input id="nickname-input" type="text" maxlength="16" class="ms-input" placeholder="昵称" aria-label="排行榜昵称" autocomplete="off">
+      <div id="nickname-keyboard" class="ms-nickname-keyboard hidden" data-controller-grid="10" aria-label="昵称屏幕键盘">
+        ${[...'abcdefghijklmnopqrstuvwxyz0123456789'].map(key => `<button type="button" data-key="${key}">${key.toUpperCase()}</button>`).join('')}
+        <button type="button" data-key="space">空格</button>
+        <button type="button" data-key="backspace">退格</button>
+        <button type="button" data-key="clear">清空</button>
+        <button type="button" data-key="player">玩家</button>
+      </div>
       <div class="modal-actions">
         <button type="button" id="nickname-submit">提交</button>
         <button type="button" id="nickname-cancel">取消</button>
@@ -235,23 +288,33 @@ export function createUI(host, deps) {
   const gameStatus = host.querySelector('#game-status');
   const gameProgress = host.querySelector('#game-progress');
   const progressText = host.querySelector('#game-progress-text');
+  const focusToggle = host.querySelector('#focus-toggle');
+  const focusExit = host.querySelector('#focus-exit');
+  const focusMineCount = host.querySelector('#focus-mine-count');
+  const focusTimer = host.querySelector('#focus-timer');
+  const nicknameKeyboard = host.querySelector('#nickname-keyboard');
 
   let pauseReturnFocus = null;
   let nicknameReturnFocus = null;
   let destroyed = false;
+  let page = null;
+  let focusView = false;
+  let bindings = { ...DEFAULT_GAMEPAD_BINDINGS };
+  let controllerStatus = { connected: false, supported: false, id: '' };
 
   function visible(element) {
     return !element.classList.contains('hidden');
   }
 
-  function restoreFocus(element) {
-    function available(target) {
-      if (!target?.isConnected || target.matches(':disabled')) return false;
-      for (let node = target; node; node = node.parentElement) {
-        if (node.inert || node.hidden || node.classList.contains('hidden')) return false;
-      }
-      return true;
+  function available(target) {
+    if (!target?.isConnected || target.matches(':disabled')) return false;
+    for (let node = target; node; node = node.parentElement) {
+      if (node.inert || node.hidden || node.classList.contains('hidden')) return false;
     }
+    return true;
+  }
+
+  function restoreFocus(element) {
     if (available(element)) element.focus?.();
     if (!available(element) || document.activeElement !== element) {
       const canvas = host.querySelector('#board-canvas');
@@ -267,7 +330,10 @@ export function createUI(host, deps) {
   function syncInert() {
     const dialog = activeDialog();
     for (const child of host.children) child.inert = Boolean(dialog && child !== dialog);
-    if (!dialog) sidebar.inert = !getSidebarOpen();
+    if (!dialog) {
+      sidebar.inert = !getSidebarOpen() || focusView;
+      topbar.inert = focusView;
+    }
   }
 
   function syncSidebar() {
@@ -289,10 +355,45 @@ export function createUI(host, deps) {
   }
 
   // ---------- 事件绑定：顶栏 ----------
-  listen(sidebarToggle, 'click', () => {
-    document.body.classList.toggle('sidebar-open');
+  function layoutChanged() {
+    host.dispatchEvent(new Event('ui-layout-change'));
+  }
+
+  function setSidebar(open, focusFirst = false) {
+    if (open && focusView) changeFocusView(false);
+    if (open && page) closePage();
+    document.body.classList.toggle('sidebar-open', open);
     syncSidebar();
     actions.toggleSidebar?.();
+    if (focusFirst && open) sidebar.querySelector('button:not(:disabled)')?.focus();
+    if (!open) restoreFocus(host.querySelector('#board-canvas'));
+  }
+  listen(sidebarToggle, 'click', () => {
+    setSidebar(!getSidebarOpen());
+  });
+
+  listen(focusToggle, 'click', () => changeFocusView(!focusView));
+  listen(focusExit, 'click', () => changeFocusView(false));
+  listen(host, 'pointerdown', () => { delete host.dataset.controllerActive; });
+  listen(host.querySelector('#help-open'), 'click', showHelp);
+  listen(host.querySelector('#controls-open'), 'click', showControls);
+  listen(host.querySelector('#help-controls-open'), 'click', showControls);
+  listen(host.querySelector('#help-back'), 'click', closePage);
+  listen(host.querySelector('#controls-back'), 'click', closePage);
+  listen(host.querySelector('#board-size'), 'change', (event) => {
+    actions.setBoardSize?.(Number(event.target.value));
+  });
+
+  for (const action of Object.keys(BINDING_NAMES)) {
+    listen(host.querySelector(`#binding-${action}`), 'change', (event) => {
+      const button = Number(event.target.value);
+      setGamepadBindings(rebindGamepad(bindings, action, button));
+      actions.setGamepadBinding?.(action, button);
+    });
+  }
+  listen(host.querySelector('#bindings-reset'), 'click', () => {
+    setGamepadBindings(DEFAULT_GAMEPAD_BINDINGS);
+    actions.resetGamepadBindings?.();
   });
 
   listen(pauseBtn, 'click', () => actions.pause?.());
@@ -346,12 +447,14 @@ export function createUI(host, deps) {
       nicknameInput.value = deps.leaderboard.getLastNickname();
     }
     nicknameModal.classList.remove('hidden');
+    nicknameKeyboard.classList.add('hidden');
     syncInert();
     nicknameInput.focus();
     nicknameInput.select();
   }
   function closeNickname() {
     nicknameModal.classList.add('hidden');
+    nicknameKeyboard.classList.add('hidden');
     syncInert();
     if (activeDialog()) resumeBtn.focus();
     else restoreFocus(nicknameReturnFocus);
@@ -366,9 +469,34 @@ export function createUI(host, deps) {
   listen(nicknameSubmit, 'click', submitNickname);
   listen(nicknameCancel, 'click', closeNickname);
 
+  for (const button of nicknameKeyboard.querySelectorAll('[data-key]')) {
+    listen(button, 'click', () => {
+      const key = button.dataset.key;
+      let start = nicknameInput.selectionStart ?? nicknameInput.value.length;
+      let end = nicknameInput.selectionEnd ?? start;
+      let inserted = key === 'space' ? ' ' : key === 'player' ? '玩家' : key;
+      if (key === 'clear') { start = 0; end = nicknameInput.value.length; inserted = ''; }
+      if (key === 'backspace') { if (start === end) start = Math.max(0, start - 1); inserted = ''; }
+      const before = nicknameInput.value.slice(0, start);
+      const after = nicknameInput.value.slice(end);
+      inserted = inserted.slice(0, Math.max(0, 16 - before.length - after.length));
+      nicknameInput.value = before + inserted + after;
+      nicknameInput.setSelectionRange(start + inserted.length, start + inserted.length);
+      nicknameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
   listen(document, 'keydown', (event) => {
     const dialog = activeDialog();
-    if (!dialog || event.isComposing) return;
+    if (event.isComposing) return;
+    if (!dialog) {
+      if (event.key === 'Escape' && (hasControllerContext() || focusView)) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleController('cancel');
+      }
+      return;
+    }
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
@@ -379,7 +507,7 @@ export function createUI(host, deps) {
       event.stopPropagation();
       if (!event.repeat) submitNickname();
     } else if (event.key === 'Tab') {
-      const controls = [...dialog.querySelectorAll('input, button')].filter(element => !element.disabled);
+      const controls = [...dialog.querySelectorAll('input, button')].filter(available);
       const first = controls[0];
       const last = controls[controls.length - 1];
       if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
@@ -464,6 +592,7 @@ export function createUI(host, deps) {
   buildTabs();
 
   function showLeaderboard(hint) {
+    if (page) closePage();
     if (deps.getState) {
       const snap = deps.getState();
       if (snap && MODE_NAMES[snap.mode]) {
@@ -482,6 +611,7 @@ export function createUI(host, deps) {
   }
   listen(leaderboardClose, 'click', () => {
     leaderboardModal.classList.add('hidden');
+    restoreFocus(host.querySelector('#board-canvas'));
   });
   // 点击面板外区域隐藏面板
   listen(document, 'click', (e) => {
@@ -507,13 +637,127 @@ export function createUI(host, deps) {
     return document.body.classList.contains('sidebar-open');
   }
 
+  // 专页沿用现有棋盘节点；切页不会重置棋盘、计时或后台生成。
+  function showPage(target) {
+    if (activeDialog()) return;
+    if (focusView) changeFocusView(false);
+    if (getSidebarOpen()) setSidebar(false);
+    leaderboardModal.classList.add('hidden');
+    page = target;
+    helpPage.classList.toggle('hidden', target !== helpPage);
+    controlsPage.classList.toggle('hidden', target !== controlsPage);
+    summary.classList.add('hidden');
+    boardWrap?.classList.add('hidden');
+    main.scrollTop = 0;
+    syncInert();
+    target.querySelector('button, select')?.focus();
+    layoutChanged();
+  }
+
+  function showHelp() { showPage(helpPage); }
+  function showControls() { showPage(controlsPage); }
+
+  function closePage() {
+    page = null;
+    helpPage.classList.add('hidden');
+    controlsPage.classList.add('hidden');
+    summary.classList.remove('hidden');
+    boardWrap?.classList.remove('hidden');
+    syncInert();
+    restoreFocus(host.querySelector('#board-canvas'));
+    layoutChanged();
+  }
+
+  function setFocusView(value) {
+    const next = Boolean(value);
+    if (next && page) closePage();
+    if (next && getSidebarOpen()) setSidebar(false);
+    focusView = next;
+    document.body.classList.toggle('focus-view', focusView);
+    focusToggle.setAttribute('aria-pressed', String(focusView));
+    focusHud.classList.toggle('hidden', !focusView);
+    syncInert();
+    restoreFocus(host.querySelector('#board-canvas'));
+    layoutChanged();
+  }
+
+  function changeFocusView(value) {
+    setFocusView(value);
+    actions.setFocusView?.(focusView);
+  }
+
+  function getFocusView() { return focusView; }
+
+  function controllerScope() {
+    return activeDialog() || page || (visible(leaderboardModal) ? leaderboardModal : null) ||
+      (getSidebarOpen() ? sidebar : null);
+  }
+
+  function hasControllerContext() { return Boolean(controllerScope()); }
+
+  function handleController(action) {
+    if (destroyed) return false;
+    host.dataset.controllerActive = 'true';
+    const scope = controllerScope();
+    if (scope === nicknameModal) {
+      nicknameKeyboard.classList.remove('hidden');
+      if (action === 'mark' || action === 'cancel') closeNickname();
+      else if (action === 'reveal' && document.activeElement === nicknameInput) submitNickname();
+      else navigateControls(scope, action);
+      // 包括菜单/专注/重开在内的输入均停留在模态，不传给棋盘。
+      return true;
+    }
+    if (scope === pauseOverlay) {
+      if (['reveal', 'mark', 'cancel', 'pause'].includes(action)) actions.resume?.();
+      else navigateControls(scope, action);
+      return true;
+    }
+    if (action === 'help') { showHelp(); return true; }
+    if (action === 'focus') { changeFocusView(!focusView); return true; }
+    if (action === 'menu') {
+      leaderboardModal.classList.add('hidden');
+      setSidebar(!getSidebarOpen(), true);
+      return true;
+    }
+    if (scope) {
+      if (action === 'mark' || action === 'cancel') {
+        if (page) closePage();
+        else if (scope === leaderboardModal) {
+          leaderboardModal.classList.add('hidden');
+          restoreFocus(host.querySelector('#board-canvas'));
+        } else setSidebar(false);
+      } else navigateControls(scope, action);
+      return true;
+    }
+    if (action === 'cancel' && focusView) { changeFocusView(false); return true; }
+    return false;
+  }
+
+  function setGamepadBindings(map) {
+    if (!isValidGamepadBindings(map)) return;
+    bindings = { ...map };
+    for (const action of Object.keys(BINDING_NAMES)) {
+      host.querySelector(`#binding-${action}`).value = String(bindings[action]);
+      host.querySelector(`#help-binding-${action}`).textContent = BUTTON_NAMES[bindings[action]];
+    }
+    setControllerStatus(controllerStatus);
+  }
+
+  function setBoardSize(size) {
+    if (size === 0 || (Number.isInteger(size) && size >= 16 && size <= 48)) {
+      host.querySelector('#board-size').value = String(size);
+    }
+  }
+
   // ---------- 状态刷新 API ----------
   function setMineCount(n) {
     mineCount.textContent = String(n);
+    focusMineCount.textContent = String(n);
   }
   function setTime(ms) {
     const text = formatTime(ms);
     if (timer.textContent !== text) timer.textContent = text;
+    if (focusTimer.textContent !== text) focusTimer.textContent = text;
   }
   function setPauseOverlay(visible) {
     const wasVisible = !pauseOverlay.classList.contains('hidden');
@@ -534,7 +778,7 @@ export function createUI(host, deps) {
   }
 
   function setGameStatus({ state, mode, rows, cols, mines, revealedCount }) {
-    const states = { ready: '准备就绪 · 点击任意格开始', generating: '正在生成无猜棋盘… 可重开取消', playing: '进行中', paused: '已暂停', won: '胜利！', lost: '踩到地雷，再试一局' };
+    const states = { ready: '准备就绪', generating: '正在生成…', playing: '进行中', paused: '已暂停', won: '胜利！', lost: '踩到地雷，再试一局' };
     gameMeta.textContent = `${MODE_NAMES[mode] || '自定义'} · ${rows} × ${cols} · ${mines} 雷`;
     const status = states[state] || '';
     if (gameStatus.textContent !== status) gameStatus.textContent = status;
@@ -552,9 +796,10 @@ export function createUI(host, deps) {
   }
 
   function setControllerStatus({ connected = false, supported = false, id = '' } = {}) {
+    controllerStatus = { connected, supported, id };
     const element = host.querySelector('#controller-status');
     const text = !connected ? '手柄未连接 · 连接后按一下按键识别'
-      : supported ? `手柄已连接：${id} · A 翻开 / X 标记 / Start 暂停`
+      : supported ? `手柄已连接：${id} · ${BUTTON_NAMES[bindings.reveal]} 确认 / ${BUTTON_NAMES[bindings.mark]} 返回 / ${BUTTON_NAMES[bindings.menu]} 菜单`
         : `手柄已连接：${id} · 暂不支持此按键映射`;
     if (element.textContent !== text) element.textContent = text;
   }
@@ -563,11 +808,13 @@ export function createUI(host, deps) {
     const previousFocus = nicknameReturnFocus || pauseReturnFocus;
     pauseOverlay.classList.add('hidden');
     nicknameModal.classList.add('hidden');
+    nicknameKeyboard.classList.add('hidden');
     leaderboardModal.classList.add('hidden');
     nicknameReturnFocus = null;
     pauseReturnFocus = null;
+    if (page) closePage();
     syncInert();
-    restoreFocus(previousFocus);
+    if (previousFocus) restoreFocus(previousFocus);
   }
 
   function destroy() {
@@ -575,7 +822,11 @@ export function createUI(host, deps) {
     destroyed = true;
     for (const cleanup of cleanups.splice(0)) cleanup();
     for (const child of host.children) child.inert = false;
+    delete host.dataset.controllerActive;
+    document.body.classList.toggle('focus-view', hadFocusView);
   }
+
+  setGamepadBindings(DEFAULT_GAMEPAD_BINDINGS);
 
   return {
     setMineCount,
@@ -591,6 +842,15 @@ export function createUI(host, deps) {
     getSidebarOpen,
     setGameStatus,
     setControllerStatus,
+    handleController,
+    hasControllerContext,
+    showHelp,
+    showControls,
+    closePage,
+    setGamepadBindings,
+    setBoardSize,
+    setFocusView,
+    getFocusView,
     resetTransient,
     destroy,
   };
