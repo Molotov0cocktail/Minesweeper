@@ -1,269 +1,373 @@
-// src/renderer/main.js
-// 装配层：创建 game、绑定画布鼠标交互、缩放手柄、窗口自适应、UI 与 game 事件联动、
-// v2（T12）：侧栏开合适配（fitToWindow 扣侧栏宽）、防猜测设置持久化（settings，依赖 T7）、
-//           排行榜面板。
-// v3（T18）：安装/卸载向导已剥离（独立 MinesweeperSetup），本文件无 installer IPC 接线。
-
+// 游戏装配：事件驱动绘制、键盘与鼠标、设置、缩放、排行榜。
+// Electron 安装接口已独立；本模块不依赖主进程，DOM 根节点存在时才自动启动。
 import { createGame, STATE } from '../core/game.js';
 import { MODES, validateCustom } from '../core/modes.js';
 import { createLeaderboard, LEADERBOARD_MODES } from '../core/leaderboard.js';
 import { createSettings } from '../core/settings.js';
-import { CELL_REVEALED } from '../core/board.js';
+import { CELL_REVEALED, CELL_FLAGGED, CELL_QUESTIONED } from '../core/board.js';
 import { drawBoard } from './render.js';
 import { createUI, formatTime } from './ui.js';
 
 const MIN_CELL = 16;
 const MAX_CELL = 48;
-const SIDEBAR_WIDTH = 248; // 侧栏展开时棋盘可用宽扣减（详细设计 §6）
+const SIDEBAR_WIDTH = 248;
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-const app = document.getElementById('app');
-const canvas = document.getElementById('board-canvas');
-const scaleHandle = document.getElementById('scale-handle');
+/** 启动一个游戏界面；destroy 清理计时器、监听器并恢复原来的棋盘容器。 */
+export function startApp({ host = globalThis.document?.getElementById('app'), storage = globalThis.localStorage } = {}) {
+  const canvas = host?.querySelector('#board-canvas');
+  const boardWrap = host?.querySelector('#board-wrap');
+  const scaleHandle = host?.querySelector('#scale-handle');
+  if (!canvas || !boardWrap || !scaleHandle) return { destroy() {} };
 
-const leaderboard = createLeaderboard();
-const settings = createSettings();
+  const originalChildren = [...host.childNodes];
+  const leaderboard = createLeaderboard(storage);
+  const settings = createSettings(storage);
+  const cleanups = [];
+  let destroyed = false;
+  let game = null;
+  let cellSize = 24;
+  let pendingScore = null;
+  let selection = { row: 0, col: 0 };
+  let drag = null;
 
-let game = null;
-let cellSize = 24;
-let pendingScore = null; // 待提交的胜利成绩
+  function listen(target, type, handler) {
+    target.addEventListener(type, handler);
+    cleanups.push(() => target.removeEventListener(type, handler));
+  }
 
-// ---------- 缩放手柄拖拽状态 ----------
-let dragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
-let dragStartSize = MIN_CELL;
+  function settingsToUi(s) {
+    return { method: s.antiGuessMethod, maxAttempts: s.maxAttempts, maxRegionAttempts: s.maxRegionAttempts };
+  }
 
-function clamp(v, lo, hi) {
-  return Math.max(lo, Math.min(hi, v));
-}
+  function clampAttempts(value) {
+    const number = Math.round(Number(value));
+    return Number.isFinite(number) ? clamp(number, 1, 200) : 1;
+  }
 
-function isSidebarOpen() {
-  return document.body.classList.contains('sidebar-open');
-}
+  const focusMarker = document.createElement('div');
+  focusMarker.id = 'board-focus';
+  focusMarker.className = 'hidden';
+  focusMarker.setAttribute('aria-hidden', 'true');
+  boardWrap.appendChild(focusMarker);
+  canvas.tabIndex = 0;
+  canvas.setAttribute('role', 'group');
+  canvas.setAttribute('aria-describedby', 'controls-help');
+  // 显式使用内容盒，边框不压缩逻辑格子，也不计入指针坐标。
+  canvas.style.boxSizing = 'content-box';
 
-function settingsToUi(s) {
-  return { method: s.antiGuessMethod, maxAttempts: s.maxAttempts, maxRegionAttempts: s.maxRegionAttempts };
-}
+  function updateSelection() {
+    if (!game || destroyed) return;
+    selection.row = clamp(selection.row, 0, game.rows - 1);
+    selection.col = clamp(selection.col, 0, game.cols - 1);
+    const cell = game.board.cells[selection.row * game.cols + selection.col];
+    let description = '未翻开';
+    if (cell.state === CELL_FLAGGED) description = '已标旗';
+    else if (cell.state === CELL_QUESTIONED) description = '问号';
+    else if (cell.state === CELL_REVEALED) description = cell.isMine ? '地雷' : cell.count ? `周围 ${cell.count} 个雷` : '空格';
+    canvas.setAttribute('aria-label', game.state === STATE.PAUSED
+      ? '扫雷棋盘，已暂停'
+      : `扫雷棋盘，第 ${selection.row + 1} 行，第 ${selection.col + 1} 列，${description}`);
+    const style = getComputedStyle(canvas);
+    const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+    const borderTop = parseFloat(style.borderTopWidth) || 0;
+    focusMarker.style.left = `${canvas.offsetLeft + borderLeft + selection.col * cellSize}px`;
+    focusMarker.style.top = `${canvas.offsetTop + borderTop + selection.row * cellSize}px`;
+    focusMarker.style.width = `${cellSize}px`;
+    focusMarker.style.height = `${cellSize}px`;
+    focusMarker.classList.toggle('hidden', document.activeElement !== canvas || game.state === STATE.PAUSED);
+  }
 
-// 输入框数值 → [1,200] 整数（与 settings 校验一致）
-function clampAttempts(n) {
-  const v = Math.round(Number(n));
-  return Number.isFinite(v) ? clamp(v, 1, 200) : 1;
-}
+  function updateAntiGuessStatus() {
+    const active = game.state === STATE.READY ? game.antiGuess : game.antiGuessActive;
+    ui.setAntiGuessActive(active);
+  }
 
-function render() {
-  if (!game) return;
-  const w = game.cols * cellSize;
-  const h = game.rows * cellSize;
-  if (canvas.width !== w) canvas.width = w;
-  if (canvas.height !== h) canvas.height = h;
-  drawBoard(canvas.getContext('2d'), game, cellSize, {});
-  ui.setMineCount(game.getRemainingMines());
-  ui.setTime(game.getElapsedMs());
-  updateAntiGuessStatus();
-}
+  function updateGameStatus() {
+    ui.setGameStatus({
+      state: game.state,
+      mode: game.mode,
+      rows: game.rows,
+      cols: game.cols,
+      mines: game.mines,
+      revealedCount: game.board.cells.filter(cell => cell.state === CELL_REVEALED && !cell.isMine).length,
+    });
+  }
 
-function updateAntiGuessStatus() {
-  if (!game) return;
-  // READY 阶段防猜测尚未生效，按开关设置显示；对局开始后按实际生效与否显示
-  const active = game.state === STATE.READY ? game.antiGuess : game.antiGuessActive;
-  ui.setAntiGuessActive(active);
-}
+  function render() {
+    if (!game || destroyed) return;
+    const width = game.cols * cellSize;
+    const height = game.rows * cellSize;
+    const dpr = Math.max(1, Number(window.devicePixelRatio) || 1);
+    const pixelWidth = Math.round(width * dpr);
+    const pixelHeight = Math.round(height * dpr);
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0);
+      drawBoard(ctx, game, cellSize, {});
+    }
+    ui.setMineCount(game.getRemainingMines());
+    ui.setTime(game.getElapsedMs());
+    updateGameStatus();
+    updateAntiGuessStatus();
+    updateSelection();
+  }
 
-function newGame(config) {
-  // 防猜测相关配置始终取最新持久化设置（settings），作用于当前与后续对局
-  const s = settings.get();
-  game = createGame({
-    rows: config.rows,
-    cols: config.cols,
-    mines: config.mines,
-    mode: config.mode,
-    antiGuess: s.antiGuess,
-    antiGuessMethod: s.antiGuessMethod,
-    maxAttempts: s.maxAttempts,
-    maxRegionAttempts: s.maxRegionAttempts,
+  function fitToWindow() {
+    if (!game || destroyed) return;
+    // 规格和状态会影响换行高度：先回填，再测量真实剩余空间。
+    updateGameStatus();
+    const sidebar = document.body.classList.contains('sidebar-open') ? SIDEBAR_WIDTH : 0;
+    let availableWidth = window.innerWidth - 56 - sidebar;
+    let availableHeight = window.innerHeight - 220;
+    const mainArea = host.querySelector('.ms-main');
+    const mainStyle = getComputedStyle(mainArea);
+    const wrapStyle = getComputedStyle(boardWrap);
+    const canvasStyle = getComputedStyle(canvas);
+    const pixels = (style, property) => parseFloat(style[property]) || 0;
+    const horizontalExtras = style => pixels(style, 'paddingLeft') + pixels(style, 'paddingRight')
+      + pixels(style, 'borderLeftWidth') + pixels(style, 'borderRightWidth');
+    const verticalExtras = style => pixels(style, 'paddingTop') + pixels(style, 'paddingBottom')
+      + pixels(style, 'borderTopWidth') + pixels(style, 'borderBottomWidth');
+    if (mainArea.clientWidth > 0) {
+      availableWidth = mainArea.clientWidth - pixels(mainStyle, 'paddingLeft') - pixels(mainStyle, 'paddingRight')
+        - horizontalExtras(wrapStyle) - horizontalExtras(canvasStyle);
+    }
+    if (mainArea.clientHeight > 0) {
+      const blocks = [...mainArea.children].filter(element => getComputedStyle(element).display !== 'none');
+      const otherHeight = blocks.filter(element => element !== boardWrap).reduce((height, element) => {
+        const style = getComputedStyle(element);
+        return height + element.offsetHeight + pixels(style, 'marginTop') + pixels(style, 'marginBottom');
+      }, 0);
+      const gaps = Math.max(0, blocks.length - 1) * pixels(mainStyle, 'rowGap');
+      availableHeight = mainArea.clientHeight - pixels(mainStyle, 'paddingTop') - pixels(mainStyle, 'paddingBottom')
+        - otherHeight - gaps - verticalExtras(wrapStyle) - verticalExtras(canvasStyle);
+    }
+    // 极小窗口仍保留可辨识的格子；主区域可滚动到全部棋盘与提示。
+    cellSize = clamp(Math.floor(Math.min(availableWidth / game.cols, availableHeight / game.rows)), MIN_CELL, MAX_CELL);
+    render();
+  }
+
+  function newGame(config) {
+    const currentSettings = settings.get();
+    game = createGame({ ...config, ...currentSettings });
+    game.on('win', onWin);
+    game.on('lose', render);
+    game.on('warning', warning => { if (!destroyed) ui.showBanner(warning); });
+    pendingScore = null;
+    selection = { row: 0, col: 0 };
+    drag = null;
+    ui.resetTransient();
+    ui.hideBanner();
+    fitToWindow();
+  }
+
+  function onWin(payload) {
+    if (destroyed) return;
+    render();
+    if (!LEADERBOARD_MODES.includes(payload.mode)) {
+      ui.showBanner(`恭喜胜利！用时 ${formatTime(payload.timeMs)}`);
+    } else if (leaderboard.isTopTen(payload.mode, payload.antiGuessActive, payload.timeMs)) {
+      pendingScore = payload;
+      ui.showNicknamePrompt(payload);
+    } else {
+      ui.showLeaderboard('未进入该榜单前 10 名，成绩未上榜');
+    }
+  }
+
+  const actions = {
+    selectMode(mode) {
+      const conf = MODES[mode];
+      if (!conf) return;
+      ui.setCustomError('');
+      newGame({ rows: conf.rows, cols: conf.cols, mines: conf.mines, mode });
+    },
+    applyCustom(rows, cols, mines) {
+      const result = validateCustom(rows, cols, mines);
+      if (!result.ok) { ui.setCustomError(result.error); return; }
+      ui.setCustomError('');
+      newGame({ rows: result.rows, cols: result.cols, mines: result.mines, mode: 'custom' });
+    },
+    toggleAntiGuess(checked) {
+      const value = settings.update({ antiGuess: Boolean(checked) });
+      game.antiGuess = value.antiGuess;
+      updateAntiGuessStatus();
+    },
+    pause() {
+      game.pause();
+      ui.setPauseOverlay(game.state === STATE.PAUSED);
+      render();
+    },
+    resume() {
+      game.resume();
+      ui.setPauseOverlay(false);
+      render();
+    },
+    restart() {
+      newGame({ rows: game.rows, cols: game.cols, mines: game.mines, mode: game.mode });
+    },
+    submitNickname(nickname) {
+      if (!pendingScore) return;
+      const { mode, antiGuessActive, timeMs } = pendingScore;
+      const result = leaderboard.addScore(mode, antiGuessActive, nickname, timeMs);
+      leaderboard.setLastNickname(nickname);
+      pendingScore = null;
+      ui.showLeaderboard(result.added ? undefined : '未进入该榜单前 10 名，成绩未上榜');
+    },
+    toggleSidebar: fitToWindow,
+    setAntiGuessMethod(method) {
+      const value = settings.update({ antiGuessMethod: method });
+      ui.setAntiGuessSettings(settingsToUi(value));
+      game.antiGuessMethod = value.antiGuessMethod;
+    },
+    setMaxAttempts(number) {
+      const value = settings.update({ maxAttempts: clampAttempts(number) });
+      ui.setAntiGuessSettings(settingsToUi(value));
+      game.maxAttempts = value.maxAttempts;
+    },
+    setMaxRegionAttempts(number) {
+      const value = settings.update({ maxRegionAttempts: clampAttempts(number) });
+      ui.setAntiGuessSettings(settingsToUi(value));
+      game.maxRegionAttempts = value.maxRegionAttempts;
+    },
+    openLeaderboard() { ui.showLeaderboard(); },
+  };
+
+  const ui = createUI(host, {
+    leaderboard,
+    getState: () => game ? { mode: game.mode, antiGuessActive: game.state === STATE.READY ? game.antiGuess : game.antiGuessActive } : null,
+    actions,
   });
-  game.on('win', onWin);
-  game.on('lose', onLose);
-  game.on('warning', (warning) => ui.showBanner(warning));
-  pendingScore = null;
-  ui.setPauseOverlay(false);
-  ui.hideBanner();
-  render();
-}
 
-function onWin(payload) {
-  render();
-  // 自定义模式不计入排行榜（FR1.3 / FR7.1）
-  if (!LEADERBOARD_MODES.includes(payload.mode)) {
-    ui.showBanner(`恭喜胜利！用时 ${formatTime(payload.timeMs)}`);
-    return;
+  function visible(id) {
+    const element = host.querySelector(`#${id}`);
+    return element && !element.classList.contains('hidden');
   }
-  if (leaderboard.isTopTen(payload.mode, payload.antiGuessActive, payload.timeMs)) {
-    pendingScore = payload;
-    ui.showNicknamePrompt(payload);
-  } else {
-    ui.showLeaderboard('未进入该榜单前 10 名，成绩未上榜');
+
+  function hasModal() { return visible('pause-overlay') || visible('nickname-modal'); }
+
+  function operateCell(pos, mark) {
+    const cell = game.board.cells[pos.row * game.cols + pos.col];
+    if (mark) {
+      if (cell.state === CELL_REVEALED) game.chordRight(pos.row, pos.col);
+      else game.cycleMark(pos.row, pos.col);
+    } else if (cell.state === CELL_REVEALED) game.chordLeft(pos.row, pos.col);
+    else game.reveal(pos.row, pos.col);
+    render();
   }
-}
 
-function onLose() {
-  render();
-}
+  function cellFromEvent(event) {
+    const rect = canvas.getBoundingClientRect();
+    const style = getComputedStyle(canvas);
+    const left = parseFloat(style.borderLeftWidth) || 0;
+    const right = parseFloat(style.borderRightWidth) || 0;
+    const top = parseFloat(style.borderTopWidth) || 0;
+    const bottom = parseFloat(style.borderBottomWidth) || 0;
+    const width = rect.width - left - right;
+    const height = rect.height - top - bottom;
+    const x = event.clientX - rect.left - left;
+    const y = event.clientY - rect.top - top;
+    if (!(width > 0 && height > 0) || x < 0 || y < 0 || x >= width || y >= height) return null;
+    return { row: Math.floor(y / height * game.rows), col: Math.floor(x / width * game.cols) };
+  }
 
-// ---------- 装配 actions ----------
-const actions = {
-  selectMode(mode) {
-    const conf = MODES[mode];
-    if (!conf) return;
-    ui.setCustomError('');
-    newGame({ rows: conf.rows, cols: conf.cols, mines: conf.mines, mode });
-  },
-  applyCustom(rows, cols, mines) {
-    const result = validateCustom(rows, cols, mines);
-    if (!result.ok) {
-      ui.setCustomError(result.error);
+  listen(canvas, 'mousedown', event => {
+    if (hasModal() || (event.button !== 0 && event.button !== 2)) return;
+    const pos = cellFromEvent(event);
+    if (!pos) return;
+    event.preventDefault();
+    selection = pos;
+    canvas.focus({ preventScroll: true });
+    operateCell(pos, event.button === 2);
+  });
+  listen(canvas, 'contextmenu', event => event.preventDefault());
+  listen(canvas, 'focus', updateSelection);
+  listen(canvas, 'blur', updateSelection);
+
+  listen(document, 'keydown', event => {
+    if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
+    const target = event.target;
+    if (target?.closest?.('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+    const key = event.key.toLowerCase();
+    if (hasModal()) {
+      // 暂停遮罩仅允许 P 继续；昵称弹窗等其他情形不接管游戏快捷键。
+      if (key === 'p' && !event.repeat && game.state === STATE.PAUSED && !visible('nickname-modal')) {
+        event.preventDefault(); actions.resume();
+      }
       return;
     }
-    ui.setCustomError('');
-    newGame({ rows: result.rows, cols: result.cols, mines: result.mines, mode: 'custom' });
-  },
-  toggleAntiGuess(checked) {
-    const s = settings.update({ antiGuess: Boolean(checked) });
-    if (game) game.antiGuess = s.antiGuess;
-    updateAntiGuessStatus();
-  },
-  pause() {
-    game.pause();
-    ui.setPauseOverlay(game.state === STATE.PAUSED);
-    render();
-  },
-  resume() {
-    game.resume();
-    ui.setPauseOverlay(false);
-    render();
-  },
-  restart() {
-    ui.hideBanner();
-    game.restart();
-    render();
-  },
-  submitNickname(nickname) {
-    if (!pendingScore) return;
-    const { mode, antiGuessActive, timeMs } = pendingScore;
-    const result = leaderboard.addScore(mode, antiGuessActive, nickname, timeMs);
-    leaderboard.setLastNickname(nickname);
-    pendingScore = null;
-    ui.showLeaderboard(result.added ? undefined : '未进入该榜单前 10 名，成绩未上榜');
-  },
-  // ---------- v2：侧栏 / 防猜测设置 ----------
-  toggleSidebar() {
-    // body.sidebar-open 由 ui.js 切换；此处做棋盘适配
-    fitToWindow();
-  },
-  setAntiGuessMethod(method) {
-    const s = settings.update({ antiGuessMethod: method });
-    ui.setAntiGuessSettings(settingsToUi(s));
-    if (game) game.antiGuessMethod = s.antiGuessMethod;
-  },
-  setMaxAttempts(n) {
-    const s = settings.update({ maxAttempts: clampAttempts(n) });
-    ui.setAntiGuessSettings(settingsToUi(s));
-    if (game) game.maxAttempts = s.maxAttempts;
-  },
-  setMaxRegionAttempts(n) {
-    const s = settings.update({ maxRegionAttempts: clampAttempts(n) });
-    ui.setAntiGuessSettings(settingsToUi(s));
-    if (game) game.maxRegionAttempts = s.maxRegionAttempts;
-  },
-  // ---------- v2：排行榜面板 ----------
-  openLeaderboard() {
-    ui.showLeaderboard();
-  },
-};
+    if (key === 'f2' || key === 'p') {
+      event.preventDefault();
+      if (event.repeat) return;
+      if (key === 'f2') actions.restart();
+      else if (game.state === STATE.PAUSED) actions.resume();
+      else actions.pause();
+      return;
+    }
+    if (document.activeElement !== canvas) return;
+    const arrows = { arrowup: [-1, 0], arrowdown: [1, 0], arrowleft: [0, -1], arrowright: [0, 1] };
+    if (arrows[key]) {
+      event.preventDefault();
+      selection.row = clamp(selection.row + arrows[key][0], 0, game.rows - 1);
+      selection.col = clamp(selection.col + arrows[key][1], 0, game.cols - 1);
+      updateSelection();
+      focusMarker.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    } else if (key === 'enter' || key === ' ' || key === 'f') {
+      event.preventDefault();
+      if (!event.repeat) operateCell(selection, key === 'f');
+    }
+  });
 
-const ui = createUI(app, {
-  leaderboard,
-  getState: () => (game ? { mode: game.mode, antiGuessActive: game.antiGuessActive } : null),
-  actions,
-});
+  listen(scaleHandle, 'mousedown', event => {
+    if (event.button !== 0 || hasModal()) return;
+    drag = { x: event.clientX, y: event.clientY, size: cellSize };
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  listen(window, 'mousemove', event => {
+    if (!drag) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    const delta = Math.abs(dx) >= Math.abs(dy) ? dx : dy;
+    cellSize = clamp(drag.size + Math.round(delta / 3), MIN_CELL, MAX_CELL);
+    render();
+  });
+  listen(window, 'mouseup', () => { drag = null; });
+  listen(window, 'resize', fitToWindow);
+  for (const details of host.querySelectorAll('#controls-help details')) listen(details, 'toggle', fitToWindow);
 
-// ---------- 鼠标交互 ----------
-function cellFromEvent(e) {
-  if (!game) return null;
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  const col = Math.floor(x / cellSize);
-  const row = Math.floor(y / cellSize);
-  if (row < 0 || col < 0 || row >= game.rows || col >= game.cols) return null;
-  return { row, col };
-}
-
-canvas.addEventListener('mousedown', (e) => {
-  const pos = cellFromEvent(e);
-  if (!pos || !game) return;
-  const cell = game.board.cells[pos.row * game.cols + pos.col];
-  if (e.button === 0) {
-    // 左键：已翻开格 → chord，未翻开格 → 翻开
-    if (cell.state === CELL_REVEALED) game.chordLeft(pos.row, pos.col);
-    else game.reveal(pos.row, pos.col);
-  } else if (e.button === 2) {
-    // 右键：已翻开格 → 镜像 chord，未翻开格 → 循环标记
-    if (cell.state === CELL_REVEALED) game.chordRight(pos.row, pos.col);
-    else game.cycleMark(pos.row, pos.col);
+  function pauseInBackground() {
+    drag = null;
+    if (game.state === STATE.PLAYING) actions.pause();
   }
-  render();
-});
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  listen(window, 'blur', pauseInBackground);
+  listen(document, 'visibilitychange', () => { if (document.hidden) pauseInBackground(); });
 
-// ---------- 缩放手柄拖拽（cellSize ∈ [16,48] 连续变化） ----------
-scaleHandle.addEventListener('mousedown', (e) => {
-  dragging = true;
-  dragStartX = e.clientX;
-  dragStartY = e.clientY;
-  dragStartSize = cellSize;
-  e.preventDefault();
-  e.stopPropagation();
-});
-window.addEventListener('mousemove', (e) => {
-  if (!dragging) return;
-  const adx = Math.abs(e.clientX - dragStartX);
-  const ady = Math.abs(e.clientY - dragStartY);
-  // 以主导方向轴的位移决定缩放量（右/下增大，左/上减小）
-  const delta = adx >= ady ? e.clientX - dragStartX : e.clientY - dragStartY;
-  cellSize = clamp(dragStartSize + Math.round(delta / 3), MIN_CELL, MAX_CELL);
-  render();
-});
-window.addEventListener('mouseup', () => {
-  dragging = false;
-});
+  const initialSettings = settings.get();
+  ui.setAntiGuessSettings(settingsToUi(initialSettings));
+  host.querySelector('#anti-guess-toggle').checked = initialSettings.antiGuess;
+  newGame({ rows: MODES.beginner.rows, cols: MODES.beginner.cols, mines: MODES.beginner.mines, mode: 'beginner' });
+  // 时钟只刷新文本；棋盘由操作、缩放、resize 等事件驱动重画。
+  const timer = setInterval(() => {
+    if (!destroyed) ui.setTime(game.getElapsedMs());
+  }, 200);
 
-// ---------- 窗口自适应 ----------
-function fitToWindow() {
-  if (!game) return;
-  // 侧栏展开时可用宽再扣 248px
-  const sidebarPad = isSidebarOpen() ? SIDEBAR_WIDTH : 0;
-  const availW = window.innerWidth - 56 - sidebarPad; // 页面左右留白
-  const availH = window.innerHeight - 220; // 标题 + 控件 + 底部留白
-  cellSize = clamp(Math.floor(Math.min(availW / game.cols, availH / game.rows)), MIN_CELL, MAX_CELL);
-  render();
+  return {
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      clearInterval(timer);
+      for (const cleanup of cleanups) cleanup();
+      ui.destroy();
+      focusMarker.remove();
+      host.replaceChildren(...originalChildren);
+      document.body.classList.remove('sidebar-open');
+    },
+  };
 }
-window.addEventListener('resize', fitToWindow);
 
-// ---------- 启动：设置回填 + 默认初级对局 ----------
-const initialSettings = settings.get();
-ui.setAntiGuessSettings(settingsToUi(initialSettings));
-const agToggleEl = document.getElementById('anti-guess-toggle');
-if (agToggleEl) agToggleEl.checked = initialSettings.antiGuess;
-
-newGame({
-  rows: MODES.beginner.rows,
-  cols: MODES.beginner.cols,
-  mines: MODES.beginner.mines,
-  mode: 'beginner',
-});
-fitToWindow();
-
-// 计时 / 剩余雷数持续刷新
-setInterval(render, 200);
+if (globalThis.document?.getElementById('app')) startApp();
