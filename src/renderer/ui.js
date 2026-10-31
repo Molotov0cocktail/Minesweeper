@@ -29,7 +29,7 @@ export function formatTime(ms) {
  *   setMineCount(n), setTime(ms), setPauseOverlay(visible), setAntiGuessActive(active),
  *   showBanner(msg), hideBanner(), showNicknamePrompt(info), showLeaderboard(hint?), setCustomError(msg),
  *   setAntiGuessSettings({method, maxAttempts, maxRegionAttempts}), getSidebarOpen(),
- *   setGameStatus({state, mode, rows, cols, mines, revealedCount}), resetTransient(), destroy()
+ *   setGameStatus({state, mode, rows, cols, mines, revealedCount}), setControllerStatus(status), resetTransient(), destroy()
  * }}
  */
 export function createUI(host, deps) {
@@ -130,7 +130,9 @@ export function createUI(host, deps) {
     <p>左键翻开 · 右键标记 · 首点安全</p>
     <p><kbd>方向键</kbd> 移动 <kbd>Enter / 空格</kbd> 翻开 <kbd>F</kbd> 标记</p>
     <p><kbd>P</kbd> 暂停 / 继续 <kbd>F2</kbd> 重开 · 拖动右下角缩放</p>
+    <p id="controller-status" role="status" aria-live="polite">手柄未连接 · 连接后按一下按键识别</p>
     <details><summary>数字格与暂停说明</summary>
+      <p>手柄：十字键 / 左摇杆移动，A / 叉翻开或确认，X / 方块标记，Start 暂停 / 继续；长按 Y / 三角 800 毫秒重开。昵称输入时 A 提交、B / 圆取消。仅支持标准布局。</p>
       <p>左键数字格：相邻旗数等于数字时，翻开周围未标旗格。右键数字格：未开格数等于数字时，批量标旗。键盘翻开与标记支持相同操作。</p>
       <p>按 Tab 聚焦棋盘后可使用方向键。切出窗口自动暂停，返回后手动继续。</p>
     </details>
@@ -532,7 +534,7 @@ export function createUI(host, deps) {
   }
 
   function setGameStatus({ state, mode, rows, cols, mines, revealedCount }) {
-    const states = { ready: '准备就绪 · 点击任意格开始', playing: '进行中', paused: '已暂停', won: '胜利！', lost: '踩到地雷，再试一局' };
+    const states = { ready: '准备就绪 · 点击任意格开始', generating: '正在生成无猜棋盘… 可重开取消', playing: '进行中', paused: '已暂停', won: '胜利！', lost: '踩到地雷，再试一局' };
     gameMeta.textContent = `${MODE_NAMES[mode] || '自定义'} · ${rows} × ${cols} · ${mines} 雷`;
     const status = states[state] || '';
     if (gameStatus.textContent !== status) gameStatus.textContent = status;
@@ -543,9 +545,18 @@ export function createUI(host, deps) {
     gameProgress.value = revealed;
     progressText.textContent = `${revealed} / ${safeCells}`;
     pauseBtn.disabled = state !== 'playing';
+    host.querySelector('#board-canvas')?.setAttribute('aria-busy', String(state === 'generating'));
     for (const button of host.querySelectorAll('.ms-mode')) {
       button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
     }
+  }
+
+  function setControllerStatus({ connected = false, supported = false, id = '' } = {}) {
+    const element = host.querySelector('#controller-status');
+    const text = !connected ? '手柄未连接 · 连接后按一下按键识别'
+      : supported ? `手柄已连接：${id} · A 翻开 / X 标记 / Start 暂停`
+        : `手柄已连接：${id} · 暂不支持此按键映射`;
+    if (element.textContent !== text) element.textContent = text;
   }
 
   function resetTransient() {
@@ -579,6 +590,7 @@ export function createUI(host, deps) {
     setAntiGuessSettings,
     getSidebarOpen,
     setGameStatus,
+    setControllerStatus,
     resetTransient,
     destroy,
   };

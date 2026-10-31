@@ -13,6 +13,22 @@ beforeEach(() => {
 afterEach(() => ui.destroy?.());
 const snap = (state, more={}) => ({state,mode:'expert',rows:16,cols:30,mines:99,revealedCount:23,...more});
 describe('对局反馈',()=>{
+  it('生成状态有明确提示，禁用暂停但允许重开取消',()=>{
+    ui.setGameStatus(snap('generating'));
+    expect($('game-status').textContent).toContain('正在生成');
+    expect($('pause-btn').disabled).toBe(true);expect($('restart-btn').disabled).toBe(false);
+    expect($('board-canvas').getAttribute('aria-busy')).toBe('true');
+    ui.setGameStatus(snap('ready'));expect($('board-canvas').getAttribute('aria-busy')).toBe('false');
+  });
+  it('手柄状态与说明可见，未映射手柄有明确提示',()=>{
+    ui.setControllerStatus({connected:true,supported:true,id:'测试手柄'});
+    expect($('controller-status').getAttribute('role')).toBe('status');
+    expect($('controller-status').textContent).toContain('测试手柄');
+    expect($('controls-help').textContent).toContain('800');
+    expect($('controls-help').textContent).toMatch(/A.*X/);
+    ui.setControllerStatus({connected:true,supported:false,id:'未知'});expect($('controller-status').textContent).toContain('不支持');
+    ui.setControllerStatus({connected:false,supported:false,id:''});expect($('controller-status').textContent).toContain('未连接');
+  });
   it('显示规格、状态、真实安全格进度和当前难度',()=>{
     ui.setGameStatus(snap('playing'));
     expect($('game-meta').textContent).toMatch(/高级.*16.*30.*99/);
