@@ -1,5 +1,10 @@
 # 高层设计 high-level-design.md
 
+## v1.4.0 架构增量
+
+core/gamepad.js为纯输入状态机，renderer/gamepad.js负责RAF轮询与清理；main将语义动作路由至现有game动作/模态确认。renderer/generation-client.js管理可取消的Worker请求/8秒超时，generation-worker.js调用原纯求解器并统一标准/高级回退结果。game通过opts.prepareBoard注入Promise生成器，保留未注入时原同步API；GENERATING状态及世代令牌守卫异步结果，零DOM/Worker依赖。main新局/销毁取消Worker和旧Game。UI显示手柄状态与生成状态。
+
+
 ## v1.3.0 升级架构（2026-10-31）
 
 沿用 core / renderer / Electron 双应用结构。board 统一拦截非法坐标；game 在首点布雷前检查格状态；leaderboard 在数据边界清洗及复制。renderer UI 管显示状态与弹窗焦点；main 导出可清理的 startApp，负责键盘、失焦暂停、DPR 画布和事件驱动重绘。计时刷新与棋盘绘制分离。无新增运行时依赖，不变更持久化键及安装流程。

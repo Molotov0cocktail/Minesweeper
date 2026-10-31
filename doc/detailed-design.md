@@ -1,5 +1,17 @@
 # 详细设计 detailed-design.md
 
+## v1.4.0 契约增量（优先于旧描述）
+
+1. core/gamepad.js导出 createGamepadMapper() -> {poll(gamepads,now,enabled=true),reset()}。poll返回{connected,supported,id,actions:string[]}，选择最低index的connected standard手柄；仅非标准手柄时connected=true/supported=false。动作up/down/left/right/reveal/mark/cancel/pause/restart，映射buttons12~15/axes0~1、0/2/1/9/3。新设备或禁用后必须所有绑定键及导航中立才能armed。方向优先十字键，摇杆取主轴，死区≤0.35；初次一次、延迟300ms、每100ms至多一次；动作按下边沿一次；restart持有800ms仅触发一次。缺失/非法数组/API/非有限轴安全处理。
+2. renderer/gamepad.js导出 startGamepad({onAction,onStatus,isEnabled,getGamepads,requestFrame,cancelFrame}={}) -> stop()。默认用浏览器API，RAF时间传mapper；异常按未连接处理；onStatus只变化时调用，stop取消帧且幂等。main按语义操作并聚焦棋盘；昵称模态A提交/B取消，暂停模态A/Start继续；普通输入框/失焦禁用。Y长按可取消生成并重开。
+3. solve.deduce双向真子集推理；同一局镜像/旋转的solved与unknown集合对应相同，返回结构维持原接口。单次调用缓存邻居表；rows/cols必须为[1,60]整数；非法尺寸/startIdx、非Set雷位/越界雷位/首点为雷返回{solved:false,unknown:Set(),clusters:[],smallest:null}，不得抛错。高级重排state基于当前mineSet，试排失败不能替换移雷验证基准；实际deduce次数≤MAX_TOTAL_DEDUCE。
+4. generation-worker.js导出 generateOpening(config,startIdx) -> {mineSet:number[],antiGuessActive,warning,stats}；高级region失败回退标准，density或retries按原精确文案；仅实际可解结果active=true，其余使用最后有效布局或randomMineSet（保持雷数与3×3首点安全）。worker onmessage输入{id,config,startIdx}，输出{id,result}或{id,error:<中文>}，模块在Node导入不得安装全局监听。
+5. generation-client.js导出 GENERATION_TIMEOUT_MS=8000、createGenerationClient({workerFactory,timeoutMs}={}) -> {prepare(config,startIdx):Promise,cancel(),destroy()}。每个请求专用Worker(new URL('./generation-worker.js',import.meta.url),{type:'module'})，prepare先取消旧请求；取消/超时/error/messageerror/无效响应都terminate并清理定时器/监听；过期id忽略，成功只接受对象result。cancel拒绝Error('生成已取消')，timeout Error('生成超时')。Worker创建失败以rejected Promise返回，不同步抛出。
+6. game STATE.GENERATING='generating'，opts.prepareBoard可选；仅antiGuess首次hidden翻格时注入异步，reveal返回{type:'generating'}。生成时所有棋盘操作noop，计时0；完成验证mineSet精确雷数/整数范围/3×3首点安全后布雷，设置active/warning/stats，开始计时并翻格；发generated事件，由main刷新。失败/无效响应使用randomMineSet并警告'防猜测已关闭：生成超时或失败，已切换普通开局'。cancelGeneration()使当前世代失效，生成态回ready；restart同时失效旧结果；拒绝/晚到结果不得更改已取消Game。
+7. createUI新增setControllerStatus({connected,supported,id})，#controller-status role=status及手柄说明；setGameStatus支持generating。main注入Worker客户端（startApp新增可选generationClient/gamepadFactory便于测试）；新局/destroy先cancelGeneration再cancel Worker。generated时若后台标记为true则暂停，焦点回来不自动继续。旧同步tests未注入prepareBoard仍成立；main在无Worker环境可不注入以供Node/jsdom，真实Electron必启用Worker。生成提示留可点击取消重开按钮。
+8. 本地更新目标取已验证InstallLocation=D:\Minesweeper\game；先备份代码/清单，静默--install-dir就地覆盖，按原快捷方式选择开关，不卸载/删除外来文件和用户档案；安装后版本、注册表、Worker与手柄状态DOM、用户档案存储文件校验。版本1.4.0标签/发布流程沿用。
+
+
 ## v1.3.0 契约增量（2026-10-31，优先于下文旧描述）
 
 1. board.indexAt 的 rows/cols 为正整数；row/col 为范围内整数，否则 -1。neighborIndexes 同样校验 idx∈[0,rows*cols)，非法空数组。所有依赖此入口的操作不抛错、不改变棋盘。
