@@ -8,17 +8,18 @@ import {
   CELL_QUESTIONED,
   CELL_REVEALED,
 } from '../core/board.js';
+import { drawMineGlyph } from './mine-glyph.js';
 
 const COLORS = {
   face: '#c0c0c0', // 经典灰
   faceLight: '#ffffff', // 高光
   faceDark: '#808080', // 深灰边
   faceBlack: '#000000', // 最暗阴影
-  mine: '#000000',
+  mine: '#26384d',
   flag: '#ff0000',
   pole: '#000000',
   question: '#0000ff',
-  highlight: '#ff0000', // 失败高亮
+  highlight: '#c94e43', // 失败警戒底
   number: [
     null,
     '#0000ff', // 1 蓝
@@ -65,11 +66,14 @@ export function drawCell(ctx, x, y, size, cell, gameState, opts = {}) {
       drawRaised(ctx, x, y, s, colors, bevel);
       drawQuestion(ctx, x, y, s, colors);
       return;
-    default: {
-      // CELL_REVEALED
+    case CELL_REVEALED: {
       drawSunken(ctx, x, y, s, colors, bevel);
       if (cell.isMine) {
-        drawMine(ctx, x, y, s, colors, gameState);
+        drawMineGlyph(ctx, x, y, s, {
+          color: colors.mine,
+          lost: gameState === 'lost',
+          danger: colors.highlight,
+        });
         return;
       }
       if (cell.count > 0) {
@@ -149,39 +153,4 @@ function drawQuestion(ctx, x, y, s, colors) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('?', x + s / 2, y + s / 2 + Math.ceil(s * 0.02));
-}
-
-function drawMine(ctx, x, y, s, colors, gameState) {
-  const cx = x + s / 2;
-  const cy = y + s / 2;
-  const r = s * 0.3;
-
-  if (gameState === 'lost') {
-    // 失败高亮：红色圆环
-    ctx.beginPath();
-    ctx.arc(cx, cy, r + s * 0.08, 0, Math.PI * 2);
-    ctx.fillStyle = colors.highlight;
-    ctx.fill();
-  }
-
-  // 尖刺（8 条）
-  ctx.strokeStyle = colors.mine;
-  ctx.lineWidth = Math.max(1, Math.round(s * 0.07));
-  ctx.beginPath();
-  for (let i = 0; i < 8; i++) {
-    const a = (i * Math.PI) / 4;
-    const x1 = cx + Math.cos(a) * r;
-    const y1 = cy + Math.sin(a) * r;
-    const x2 = cx + Math.cos(a) * (r + s * 0.18);
-    const y2 = cy + Math.sin(a) * (r + s * 0.18);
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-  }
-  ctx.stroke();
-
-  // 黑色球体
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = colors.mine;
-  ctx.fill();
 }

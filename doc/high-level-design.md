@@ -1,5 +1,10 @@
 # 高层设计 high-level-design.md
 
+## v1.5.1 图标架构
+
+renderer/mine-glyph.js为无DOM的Canvas矢量图元，render.js仅在可见雷格调用。assets/icon.svg为应用图标源；scripts/generate-icons.cjs用项目Electron/Chromium渲染各尺寸PNG并封装ICO，结果作为必要应用资源入库。scripts/icon-resources.cjs以固定resedit版本纯JS替换PE图标并保留其他资源；afterPack钩子编辑本次打包副本，win.icon配置portable图标。assets进入setup白名单与剥离游戏staging，游戏/setup窗口显式使用PNG。不涉及游戏状态/存档/手柄逻辑。
+
+
 ## v1.5.0 架构增量
 
 core/gamepad提供默认键位、严格校验与交换重映射；settings新增gamepadBindings/focusView并深复制。轮询层从getBindings动态读取，改变后重置中立锁。renderer/controller-ui.js封装控件焦点导航/数值及选项调整；ui.js决定当前作用域（模态/页面/排行榜/侧栏），主装配先委托UI，未消费的动作才操作棋盘。说明和键位页与棋盘互斥；专注视图由CSS+UI状态管理，main负责持久化/适配。保持Worker和求解接口不变。

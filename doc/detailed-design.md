@@ -1,5 +1,16 @@
 # 详细设计 detailed-design.md
 
+## v1.5.1 图标契约
+
+1. renderer/mine-glyph.js导出drawMineGlyph(ctx,x,y,size,opts={})，opts={color?,highlight?,lost?,danger?}；size≤0或非有限坐标安全不绘制。边界在格子[x+0.1s,x+0.9s]内，八向短刺、描边球体、金属高光，save/restore包围所有状态；支持没有createRadialGradient的测试/简化ctx，使用平面底色降级。color覆盖主体/短刺主色，highlight覆盖高光，lost时用danger或默认红色显示额外警戒底，不替换地雷主体。
+2. render.drawCell仅CELL_REVEALED且isMine时调用图元（保持胜利补旗），opts.colors.mine/highlight继续传给主体/失败提示。旧数字/旗/问号/格体保持原行为；渲染层不依赖Image加载或DOM。
+3. assets/icon.svg自包含无脚本/外链/字体，viewBox=0 0 512 512。assets/minesweeper.png=512×512 RGBA透明外边；minesweeper.ico包含16/20/24/32/48/64/128/256八个PNG帧。npm run icons调用scripts/generate-icons.cjs，Node入口启动Electron（清掉ELECTRON_RUN_AS_NODE），Electron入口无可见窗口渲染源SVG；每尺寸直接渲染矢量，不用缩放小PNG。生成失败非0退出。
+4. scripts/icon-resources.cjs导出embedIcon(exeBuffer,icoBuffer)->Buffer、readIconGroups(exeBuffer)->Array<{id,lang,icons:Array<{width,height,data:Buffer}>}>。可读取带原始证书的Electron底包，但输出保持项目未签名策略；替换所有原图标组，没图标组则添加1/1033。保留所有非3/14资源（包括asar integrity/version）及overlay；非法数据明确中文错误。resedit固定为devDependency 1.7.2，零额外外部exe下载。
+5. scripts/icon-after-pack.cjs导出async hook(context)，仅修改context.appOutDir内当前productFilename.exe副本，不触碰node_modules/electron。读取assets/minesweeper.ico，调用embedIcon，重新解析验证每组帧与源一致再写入。setup-builder.yml设置afterPack及win.icon，signAndEditExecutable:false继续保留。portable最终exe的图标由NSIS生成，本钩子先处理被复制为游戏exe的运行时。
+6. main.cjs/setup.cjs BrowserWindow icon=path.join(__dirname,'..','assets','minesweeper.png')。setup files含assets/**；build-dist先生成图标（失败停止）后将assets列入GAME_TOP并校验PNG/ICO存在，再打包。npm run dist仍只产一个MinesweeperSetup-1.5.1-win.exe。
+7. 测试先检查新图元/多尺寸资源/PE替换不变量/打包和窗口接线红；之后真实PNG检查、16~48px渲染预览、全量/双DPI冒烟、PE资源逐帧比对、安装E2E、本地就地更新/存档摘要、Release公开下载校验。必要assets可入库，截图/临时预览/.build/用户目录不可入库。
+
+
 ## v1.5.0 契约增量（优先于旧描述）
 
 1. core/gamepad.js新增DEFAULT_GAMEPAD_BINDINGS=Object.freeze({reveal:0,mark:1,menu:2,pause:9,restart:3,focus:11,help:8})，isValidGamepadBindings(value)要求恰含全部7个已知动作、0~11互异整数；rebindGamepad(bindings,action,button)返回新完整map，重复键交换原占用动作，非法输入返回原map拷贝。createGamepadMapper({bindings}={})新增setBindings(map)，有效改变才reset中立锁；poll的动作映射由配置决定，restart绑定键仍800ms，方向固定。旧cancel语义由mark在UI作用域实现，保留UI cancel别名供旧调用。
