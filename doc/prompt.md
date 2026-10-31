@@ -1,5 +1,7 @@
 # 控制 Prompt doc/prompt.md
 
+v1.3.0 执行增量：按 t21~t26 分派，主 agent 先编写并运行甄别测试，再让 subagent 仅实现所属模块；progress.md 统一由主 agent 汇总避免并发写冲突。新增main/UI生命周期回归、冒烟失败门禁，完整验收后重打包并发布。
+
 > 供多 agent 实施时使用。主 agent 为总协调者，各任务由 subagent 完成。
 
 ## 主 agent 角色（协调者）

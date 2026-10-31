@@ -30,11 +30,16 @@ export function createBoard(rows, cols, mines) {
   };
 }
 
+function hasValidDimensions(rows, cols) {
+  return Number.isInteger(rows) && rows > 0 && Number.isInteger(cols) && cols > 0;
+}
+
 /**
- * 行列坐标转一维索引。越界返回 -1。
+ * 行列坐标转一维索引。非法尺寸、非整数坐标或越界返回 -1。
  */
 export function indexAt(rows, cols, row, col) {
-  if (row < 0 || col < 0 || row >= rows || col >= cols) return -1;
+  if (!hasValidDimensions(rows, cols) || !Number.isInteger(row) || !Number.isInteger(col) ||
+      row < 0 || col < 0 || row >= rows || col >= cols) return -1;
   return row * cols + col;
 }
 
@@ -51,6 +56,9 @@ export function cellAt(board, row, col) {
  * 一维索引的邻居索引数组：最多 8 个，不含自身，升序。
  */
 export function neighborIndexes(rows, cols, idx) {
+  if (!hasValidDimensions(rows, cols) || !Number.isInteger(idx) || idx < 0 || idx >= rows * cols) {
+    return [];
+  }
   const row = Math.floor(idx / cols);
   const col = idx % cols;
   const result = [];

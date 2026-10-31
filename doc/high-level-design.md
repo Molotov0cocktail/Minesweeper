@@ -1,5 +1,10 @@
 # 高层设计 high-level-design.md
 
+## v1.3.0 升级架构（2026-10-31）
+
+沿用 core / renderer / Electron 双应用结构。board 统一拦截非法坐标；game 在首点布雷前检查格状态；leaderboard 在数据边界清洗及复制。renderer UI 管显示状态与弹窗焦点；main 导出可清理的 startApp，负责键盘、失焦暂停、DPR 画布和事件驱动重绘。计时刷新与棋盘绘制分离。无新增运行时依赖，不变更持久化键及安装流程。
+
+
 > 依据 doc/proposal.md。本文件描述架构、模块划分、数据流与主要权衡。
 
 ## 1. 总体架构

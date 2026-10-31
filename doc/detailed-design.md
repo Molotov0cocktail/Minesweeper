@@ -1,5 +1,18 @@
 # 详细设计 detailed-design.md
 
+## v1.3.0 契约增量（2026-10-31，优先于下文旧描述）
+
+1. board.indexAt 的 rows/cols 为正整数；row/col 为范围内整数，否则 -1。neighborIndexes 同样校验 idx∈[0,rows*cols)，非法空数组。所有依赖此入口的操作不抛错、不改变棋盘。
+2. game 首点仅 hidden 可布雷；flagged/questioned 返回 noop，计时、布雷、求解器不动。
+3. leaderboard 仅支持 LEADERBOARD_MODES；timeMs 为有限非负数。非法 addScore 返回 {added:false,rank:undefined}，isTopTen 返回 false；满榜同分后写无名次，isTopTen 与之保持一致。读取过滤 null/非对象/非法 timeMs/非字符串 nickname；昵称 trim、空回退玩家、截断16字符；date 非字符串时为空串。getScores 返回条目深度独立拷贝，合法旧记录保留，写入继续原存储键。
+4. createUI 新增 setGameStatus({state,mode,rows,cols,mines,revealedCount})、resetTransient()、destroy()。状态区 #game-status（role=status）、#game-meta、#game-progress、#controls-help。暂停只在 playing 可点击；选中难度 aria-pressed。菜单 aria-controls/expanded 与 sidebar.inert 同步。resetTransient 关闭暂停/昵称/榜单、清理焦点状态。昵称弹窗 role=dialog、aria-modal，自动聚焦并选中昵称，Enter 提交（忽略 IME）、Escape 取消、Tab 环绕；关闭回到原触发元素。暂停焦点到继续按钮，Escape 继续。destroy 移除 document 监听器。
+5. main 导出 startApp({host,storage}={}) -> {destroy()}；缺省 host=#app，存在根节点才自动启动。所有事件/计时器可清理。UI 每次游戏操作收到 setGameStatus，首点默认初级。F2/P 作用于非输入/非模态环境；仅暂停遮罩内允许 P 继续（无昵称弹窗且目标不是输入框），F2 仍禁止。键盘翻格只在 canvas 聚焦时生效（上下左右限界，Enter/Space/F 不响应 repeat）。canvas tabindex=0、aria-label 描述当前格且不泄露未开雷；#board-focus 标示键盘位置，隐藏于失焦和暂停。window.blur 或 document.hidden 仅暂停 playing，不自动恢复。
+6. render 按逻辑像素：canvas CSS 宽高=cols/rows*cellSize，backing 宽高=逻辑大小*DPR（至少1），context.setTransform(actualWidth/logicalWidth,0,0,actualHeight/logicalHeight,0,0)。指针坐标用 CSS 内容区宽高换算、排除边框，resize/换模式自动适配。timer 每200ms只 setTime，禁止整盘轮询重画。重开走 newGame 使用最新设置并清除 pendingScore/临时 UI。
+7. smoke 使用隔离临时 userData，校验加载/错误与关键交互（换模式、键盘标记与翻格、暂停重开、侧栏、榜单）；失败退出码非0，finally 清理窗口和临时目录。版本1.3.0，安装器唯一产物保持 MinesweeperSetup-<version>-win.exe。
+8. setup-builder.yml 的 files 必须显式包含 styles/main.css，保证 setup/index.html 中 ../styles/main.css 能在 app.asar 内解析。tests/setup.packaging.test.js 检查本地样式文件与打包白名单，修复此前安装器缺共享样式的问题。
+9. fit 优先测量 .ms-main 实际宽高，减去 padding、状态/提示/横幅高度、间距与棋盘边框；不可测时回退窗口估算。规格文本先更新再测量，操作说明折叠变化重适配。键盘移动后选中格滚入最近可视区。
+
+
 > 依据 doc/proposal.md 与 doc/high-level-design.md。
 > 本文件定义模块职责、精确接口契约、算法细节、边界条件与测试规格。
 > 接口契约是测试代码（tests/）与各任务 subagent 实现的唯一依据；改动需同步更新测试。
