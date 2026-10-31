@@ -79,48 +79,21 @@ describe('侧栏与既有 DOM 契约回归', () => {
   });
 });
 
-describe('防猜测设置区', () => {
-  it('渲染 #ag-method/#ag-max-attempts/#ag-region-attempts/#ag-settings-hint', () => {
-    const { host } = setup();
-    expect($(host, '#ag-method')).toBeTruthy();
-    expect($(host, '#ag-max-attempts')).toBeTruthy();
-    expect($(host, '#ag-region-attempts')).toBeTruthy();
-    expect($(host, '#ag-settings-hint')).toBeTruthy();
+describe('防猜测设置区：统一局部修复', () => {
+  it('移除实现方式和整盘预算，只保留可编辑局部预算与说明', () => {
+    const {host}=setup();
+    expect($(host,'#ag-method')).toBeNull();expect($(host,'#ag-max-attempts')).toBeNull();
+    expect($(host,'#ag-region-attempts').disabled).toBe(false);
+    expect($(host,'#ag-settings-hint').textContent).toContain('局部');
+    expect($(host,'#ag-settings-hint').textContent).not.toContain('回退标准');
   });
-
-  it('method change → setAntiGuessMethod，且联动禁用/启用 region 输入', () => {
-    const { host, deps } = setup();
-    const method = $(host, '#ag-method');
-    const region = $(host, '#ag-region-attempts');
-    method.value = 'advanced';
-    method.dispatchEvent(new Event('change'));
-    expect(deps.actions.setAntiGuessMethod).toHaveBeenCalledWith('advanced');
-    expect(region.disabled).toBe(false);
-    method.value = 'standard';
-    method.dispatchEvent(new Event('change'));
-    expect(deps.actions.setAntiGuessMethod).toHaveBeenCalledWith('standard');
-    expect(region.disabled).toBe(true);
-  });
-
-  it('maxAttempts/regionAttempts change → 数值 action', () => {
-    const { host, deps } = setup();
-    $(host, '#ag-max-attempts').value = '50';
-    $(host, '#ag-max-attempts').dispatchEvent(new Event('change'));
-    expect(deps.actions.setMaxAttempts).toHaveBeenCalledWith(50);
-    $(host, '#ag-region-attempts').value = '7';
-    $(host, '#ag-region-attempts').dispatchEvent(new Event('change'));
+  it('局部预算输入透传，回填不再受旧method影响', () => {
+    const {host,deps,ui}=setup();const region=$(host,'#ag-region-attempts');
+    region.value='7';region.dispatchEvent(new Event('change'));
     expect(deps.actions.setMaxRegionAttempts).toHaveBeenCalledWith(7);
-  });
-
-  it('setAntiGuessSettings 回填控件值（含 region disabled 联动）', () => {
-    const { host, ui } = setup();
-    ui.setAntiGuessSettings({ method: 'advanced', maxAttempts: 33, maxRegionAttempts: 9 });
-    expect($(host, '#ag-method').value).toBe('advanced');
-    expect($(host, '#ag-max-attempts').value).toBe('33');
-    expect($(host, '#ag-region-attempts').value).toBe('9');
-    expect($(host, '#ag-region-attempts').disabled).toBe(false);
-    ui.setAntiGuessSettings({ method: 'standard', maxAttempts: 20, maxRegionAttempts: 20 });
-    expect($(host, '#ag-region-attempts').disabled).toBe(true);
+    ui.setAntiGuessSettings({method:'standard',maxAttempts:33,maxRegionAttempts:9});
+    expect(region.value).toBe('9');expect(region.disabled).toBe(false);
+    expect(deps.actions.setAntiGuessMethod).not.toHaveBeenCalled();
   });
 });
 

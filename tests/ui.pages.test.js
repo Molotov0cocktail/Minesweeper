@@ -30,7 +30,7 @@ it('侧栏数值/checkbox/select和应用按钮均可手柄编辑',()=>{
  ui.handleController('menu');$('custom-rows').focus();ui.handleController('right');expect($('custom-rows').value).toBe('10');
  $('custom-apply').focus();ui.handleController('reveal');expect(actions.applyCustom).toHaveBeenCalledWith(10,9,10);
  $('anti-guess-toggle').focus();ui.handleController('reveal');expect(actions.toggleAntiGuess).toHaveBeenCalledWith(false);
- $('ag-method').focus();ui.handleController('right');expect(actions.setAntiGuessMethod).toHaveBeenCalledWith('advanced');expect($('ag-region-attempts').disabled).toBe(false);
+ expect($('ag-method')).toBeNull();expect($('ag-region-attempts').disabled).toBe(false);
  $('ag-region-attempts').focus();ui.handleController('left');expect(actions.setMaxRegionAttempts).toHaveBeenCalledWith(19);
 });
 it('排行榜tabs可导航确认，说明/键位页可B返回，不操作棋盘',()=>{

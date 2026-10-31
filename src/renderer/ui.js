@@ -28,12 +28,11 @@ export function formatTime(ms) {
 /**
  * 创建 UI。deps = { leaderboard, getState?, actions }。
  * actions（v2 新增均为可选链调用）：selectMode, applyCustom, toggleAntiGuess, pause, resume,
- *   restart, submitNickname, toggleSidebar, setAntiGuessMethod, setMaxAttempts,
- *   setMaxRegionAttempts, openLeaderboard
+ *   restart, submitNickname, toggleSidebar, setMaxRegionAttempts, openLeaderboard
  * @returns {{
  *   setMineCount(n), setTime(ms), setPauseOverlay(visible), setAntiGuessActive(active),
  *   showBanner(msg), hideBanner(), showNicknamePrompt(info), showLeaderboard(hint?), setCustomError(msg),
- *   setAntiGuessSettings({method, maxAttempts, maxRegionAttempts}), getSidebarOpen(),
+ *   setAntiGuessSettings({maxRegionAttempts}), getSidebarOpen(),
  *   setGameStatus({state, mode, rows, cols, mines, revealedCount}), setControllerStatus(status),
  *   handleController(action), hasControllerContext(), showHelp(), showControls(), closePage(),
  *   setGamepadBindings(map), setBoardSize(size), setFocusView(value), getFocusView(), resetTransient(), destroy()
@@ -104,14 +103,7 @@ export function createUI(host, deps) {
       <label class="ms-toggle"><input id="anti-guess-toggle" type="checkbox" checked> 开启防猜测</label>
       <span id="antiguess-status" class="ms-antiguess">防猜测：开启</span>
       <div class="ms-ag-settings">
-        <label class="ms-field">实现方式
-          <select id="ag-method">
-            <option value="standard">标准（整盘重排）</option>
-            <option value="advanced">高级（局部重排）</option>
-          </select>
-        </label>
-        <label class="ms-field">最大重置轮数 <input id="ag-max-attempts" type="number" min="1" max="200" value="20"></label>
-        <label class="ms-field">区域重排次数 <input id="ag-region-attempts" type="number" min="1" max="200" value="20" disabled></label>
+        <label class="ms-field">区域重排次数 <input id="ag-region-attempts" type="number" min="1" max="200" value="20"></label>
       </div>
     </div>
     <div class="ms-side-actions">
@@ -169,7 +161,7 @@ export function createUI(host, deps) {
       <dl class="ms-help-bindings">${Object.entries(BINDING_NAMES).map(([action, label]) => `<div><dt>${label}</dt><dd id="help-binding-${action}"></dd></div>`).join('')}</dl>
       <button type="button" id="help-controls-open">修改手柄键位</button>
       <h2>防猜测</h2>
-      <p id="ag-settings-hint" class="ms-hint">标准：开局不满足可解性时整盘重排，直至无猜开局；高级：优先仅重排猜雷区域，失败时回退标准。雷密度过高、次数耗尽或生成失败时，会关闭防猜测并提示。</p>
+      <p id="ag-settings-hint" class="ms-hint">开局先用逻辑推理检查可解性，再局部修复仍需猜测的区域。更复杂的推理和修复设有计算预算；雷密度过高、预算耗尽或生成失败时，会关闭本局防猜测并提示。</p>
     </div>
   `;
   const controlsPage = document.createElement('section');
@@ -268,8 +260,6 @@ export function createUI(host, deps) {
   const customError = host.querySelector('#custom-error');
   const toggle = host.querySelector('#anti-guess-toggle');
   const antiGuessStatus = host.querySelector('#antiguess-status');
-  const agMethod = host.querySelector('#ag-method');
-  const agMaxAttempts = host.querySelector('#ag-max-attempts');
   const agRegionAttempts = host.querySelector('#ag-region-attempts');
   const pauseBtn = host.querySelector('#pause-btn');
   const resumeBtn = host.querySelector('#resume-btn');
@@ -413,17 +403,6 @@ export function createUI(host, deps) {
     actions.toggleAntiGuess?.(toggle.checked);
   });
 
-  // 防猜测设置联动：method 切换 → action + 本地区 disabled 联动
-  function updateAgRegionDisabled() {
-    agRegionAttempts.disabled = agMethod.value !== 'advanced';
-  }
-  listen(agMethod, 'change', () => {
-    updateAgRegionDisabled();
-    actions.setAntiGuessMethod?.(agMethod.value);
-  });
-  listen(agMaxAttempts, 'change', () => {
-    actions.setMaxAttempts?.(Number(agMaxAttempts.value));
-  });
   listen(agRegionAttempts, 'change', () => {
     actions.setMaxRegionAttempts?.(Number(agRegionAttempts.value));
   });
@@ -624,13 +603,10 @@ export function createUI(host, deps) {
   });
 
   // ---------- 防猜测设置回填 ----------
-  function setAntiGuessSettings({ method, maxAttempts, maxRegionAttempts } = {}) {
-    if (method) agMethod.value = method;
-    if (maxAttempts !== undefined && maxAttempts !== null) agMaxAttempts.value = String(maxAttempts);
+  function setAntiGuessSettings({ maxRegionAttempts } = {}) {
     if (maxRegionAttempts !== undefined && maxRegionAttempts !== null) {
       agRegionAttempts.value = String(maxRegionAttempts);
     }
-    updateAgRegionDisabled();
   }
 
   function getSidebarOpen() {
@@ -744,9 +720,20 @@ export function createUI(host, deps) {
   }
 
   function setBoardSize(size) {
-    if (size === 0 || (Number.isInteger(size) && size >= 16 && size <= 48)) {
-      host.querySelector('#board-size').value = String(size);
+    if (size !== 0 && (!Number.isSafeInteger(size) || size < 16)) return;
+    const select = host.querySelector('#board-size');
+    const value = String(size);
+    for (const option of select.querySelectorAll('[data-current-size]')) {
+      if (option.value !== value) option.remove();
     }
+    if (size > 48 && ![...select.options].some(option => option.value === value)) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = `${size} 像素`;
+      option.dataset.currentSize = 'true';
+      select.appendChild(option);
+    }
+    select.value = value;
   }
 
   // ---------- 状态刷新 API ----------
