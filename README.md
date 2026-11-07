@@ -1,187 +1,150 @@
-# 扫雷 Minesweeper（Electron）
+<p align="center">
+  <img src="assets/minesweeper.png" width="88" height="88" alt="扫雷 Minesweeper 应用图标">
+</p>
 
-当前版本 **1.6.0**。棋盘拖动与自动适配取消48px上限，防猜测统一局部修复，加入有界组合约束推理、重复布局缓存与局部进展保留。金属地雷图元与深蓝浮雕应用图标统一，支持16～256像素Windows图标和高分屏画布。主界面只保留对局信息，操作手册位于菜单的“操作说明”。手柄可操作难度、自定义参数、防猜测设置、排行榜、键位设置、昵称输入及棋盘缩放。
+<h1 align="center">扫雷 Minesweeper</h1>
 
-默认 A 确认/翻开、B 返回/标雷、X 菜单、Start 暂停，长按 Y 重开，R3 专注视图，View 操作说明。菜单“手柄与键位”可修改七项绑定及恢复默认，冲突键自动交换。
+<p align="center"><strong>经典手感，清晰视野。把注意力留给下一步。</strong></p>
 
-顶栏“专注”、F10 或手柄 R3 可切为仅棋盘、进度和雷数/时间；退出按钮或菜单可恢复。手柄设置与视图偏好沿用原存储键保存。
+<p align="center">
+  <code>v1.6.0</code> · <code>Windows 10 / 11 · x64</code> · <code>中文界面</code> · <code>456 项测试已验收</code>
+</p>
 
-[下载 Windows 安装器](https://gitee.com/Molotov0coaktail/minesweeper/releases/download/v1.6.0/MinesweeperSetup-1.6.0-win.exe)（71.3 MB）。2026-10-31已发布；456项测试、双缩放14项冒烟、32项安装验收通过，公开附件完整下载校验一致。本地game已更新，设置和排行榜摘要不变。记录见 `doc/tasks/progress.md`。
+![深蓝与银灰配色的 Minesweeper 品牌横幅](doc/media/hero.svg)
 
-[GitHub Release 下载](https://github.com/Molotov0cocktail/Minesweeper/releases/tag/v1.6.0)：2026-11-08已同步代码、版本标签与同一安装包。
+<p align="center">
+  <a href="https://github.com/Molotov0cocktail/Minesweeper/releases/download/v1.6.0/MinesweeperSetup-1.6.0-win.exe"><img src="doc/media/download-github.svg" width="232" height="46" alt="通过 GitHub 下载 Windows 版"></a>
+  &nbsp;
+  <a href="https://gitee.com/Molotov0coaktail/minesweeper/releases/download/v1.6.0/MinesweeperSetup-1.6.0-win.exe"><img src="doc/media/download-gitee.svg" width="232" height="46" alt="通过 Gitee 下载 Windows 版"></a>
+</p>
 
-基于 Electron 的经典扫雷桌面程序，支持自定义棋盘、拖动缩放、局部修复防猜测模式、
-三种标准模式排行榜。安装/卸载由**独立便携安装器 MinesweeperSetup** 负责（游戏程序本体已剥离安装功能）。
+<p align="center">
+  单文件安装器 · 约 71.3 MiB<br>
+  <a href="https://github.com/Molotov0cocktail/Minesweeper/releases/tag/v1.6.0">GitHub 版本说明</a> ·
+  <a href="https://gitee.com/Molotov0coaktail/minesweeper/releases/tag/v1.6.0">Gitee 版本说明</a>
+</p>
 
-## 功能特性
+熟悉的浮雕棋盘、金属地雷与鲜明的数字配色，配上适合大屏的自由缩放、专注视图和完整的键盘／手柄操作。这是一款基于 Electron 的 Windows 桌面扫雷：打开一局，按自己的节奏推理。
 
-- **三种标准模式**：初级 9×9 / 10 雷，中级 16×16 / 40 雷，高级 16×30 / 99 雷
-- **自定义模式**：行/列 5~60，雷数 1 到 `min(⌊总数×0.8⌋, 总数−9)`
-- **左侧侧栏**：左上角汉堡按钮展开/收起；侧栏含等级选择、自定义行列雷数、防猜测设置、
-  排行榜入口；展开时棋盘自动缩放适配
-- **拖动缩放显示**：拖动棋盘右下角缩放手柄，格子最小16px，不设固定最大值；窗口缩放时棋盘自动等比适配
-- **经典交互**：
-  - 标准手柄与键盘均可复用翻格、标记及数字格chord操作；状态区提供连接与生成提示
-  - 左键点击未开格 → 翻开（首次点击必安全，并自动扩散空区）
-  - 右键点击未开格 → 三段循环标记 旗 → 问号 → 无
-  - 左键点击已开数字格 → 若数字 == 相邻旗数，翻开周围所有未标旗格子（chord）
-  - 右键点击已开数字格 → 若数字 == 周围未翻开格数，把周围未翻开格全部标旗（镜像 chord）
-- **防猜测模式**（默认开启，设置持久化）：首点后用单格、子集与有界组合约束推理检查整盘，停滞时局部修复。
-  - 最小歧义簇内重排，保留区域外雷位；取得严格进展且未引入簇外新歧义便继续下一簇，必要时移走一雷，总雷数与首点3×3安全区不变。
-  - 重复布局缓存求解结果；区域重排次数默认20，可调1~200，真实推理及候选尝试各最多400次。
-  - 所有枚举共同确定的格子才用于推理；搜索预算截断不猜测。密度超过50%、修复预算耗尽或Worker超时/失败时关闭本局防猜测并明确提示，不再整盘重排兜底。
-  - 旧设置自动迁移，沿用原设置和排行榜存储键。
-- **计时与暂停**：正向累加计时（非倒计时），暂停时遮罩屏幕、冻结计时
-- **排行榜**：三种标准模式各分「防猜测开 / 关」两组，共 6 组；每组记录前十名昵称与用时（按用时升序）；
-  侧栏「排行榜」按钮在主页展示榜单；胜利后输入昵称，成绩按"实际是否无猜"归组；数据存 localStorage；
-  自定义模式不计入排行榜
-- **独立便携安装器 MinesweeperSetup**（v1.6.0，单文件 exe，游戏程序不含任何安装代码）：
-  - 双击未安装 → 安装向导：选择安装地址（默认 `D:\Minesweeper`，无 D 盘回退其他盘）、
-    勾选桌面/开始菜单快捷方式 → 确认后复制完整运行时（setup exe 重命名为 `Minesweeper.exe`，
-    内嵌游戏文件映射为 `resources/app/`）+ 写卸载注册表项 + 创建快捷方式
-  - 双击已安装 → **卸载确认**：清单式删除——只删安装清单内文件与自建目录，
-    清单外文件（用户后放入）保留并提示；删除失败报具体中文原因并继续；结束后汇总报告
-  - **零痕迹**：setup 自身不写注册表/AppData/快捷方式，userData 与日志全部落在 %TEMP%
-    （便携解压目录退出自动删除）——删除 setup exe 即无任何印记
-  - **移动安装目录不崩溃**：游戏运行时路径动态解析；启动时自愈注册表 `InstallLocation`，
-    移动目录后 setup 仍能定位卸载；日志写入 `%LOCALAPPDATA%\Minesweeper\logs\`（按日轮转）
-  - 卸载入口：setup 双击（卸载确认）+ Windows 控制面板"卸载程序"
-    （注册表 UninstallString 指向 setup exe `--uninstall` 静默执行）
-  - 旧版残留（旧 NSIS 安装目录/快捷方式/注册表项）自动检测、可一键清理
-- **中文界面**、经典 Windows 扫雷 3D 浮雕视觉风格（侧栏/面板/安装向导经美化升级）
+## 为一局扫雷，做好这些细节
 
-## 环境要求
-
-- Node.js ≥ 18（开发机）
-- Windows（打包目标为 win32/x64；源码理论可在 macOS/Linux 运行，未验证）
-
-## 安装与运行
-
-```bash
-npm install        # 若 Electron 二进制下载失败：
-                   # ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install --registry=https://registry.npmmirror.com
-
-npm start          # 启动桌面程序（开发态；本机若预设 ELECTRON_RUN_AS_NODE=1 需先 unset）
-```
-
-## 测试
-
-```bash
-npm test           # 运行全部 Vitest 单测（核心逻辑 + UI/DOM 层）
-npm run test:watch # 监听模式
-# 集成冒烟：unset ELECTRON_RUN_AS_NODE && npx electron scripts/smoke.cjs
-```
-
-测试采用"测试先行"：所有行为契约先写成 `tests/`，再逐个实现。覆盖棋盘模型、可解性算法、
-防猜测局部修复及旧核心API兼容、游戏状态机/计时、排行榜存取、设置持久化、安装清单/卸载计划/错误分类、
-setup 安装向导 UI、游戏 UI 控件与画布绘制（456用例，含地雷图元/图标资源/PE不变量）。
-
-## 打包（独立便携安装器）
-
-```bash
-npm run icons      # 从assets/icon.svg重建PNG/ICO；打包时自动执行
-npm run dist       # 生成 dist/MinesweeperSetup-<版本>-win.exe（唯一产物，便携单文件）
-```
-
-> 中国大陆网络下需走镜像（Electron 与 electron-builder 二进制均从 GitHub 下载，直连易超时）：
-> ```bash
-> export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
-> export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
-> npm run dist
-> ```
-> 本机未配置代码签名，构建已配置 `win.signAndEditExecutable: false`。
-> 流水线（`scripts/build-dist.cjs`）：生成应用图标 → 清理 dist/.build → staging 剥离版游戏文件
-> （`src/core/installer.js` 与 setup 侧 electron 文件不进游戏包，自动校验）→
-> electron-builder portable（afterPack将图标写入运行时、NSIS入口使用同一ICO，约71MB）→ 清理辅助产物、校验 dist 唯一产物。
-> **使用方式**：把 `MinesweeperSetup-1.6.0-win.exe` 发给用户，双击即用——
-> 未安装走安装向导；已安装显示卸载确认。setup 自身不留任何印记（删掉 exe 即清理完毕）。
-
-## 安装与卸载入口
-
-| 操作 | 效果 |
+| | |
 |---|---|
-| 双击 `MinesweeperSetup-*.exe`（未安装） | 安装向导：选择安装地址、快捷方式选项 → 安装 → 报告 |
-| 双击 `MinesweeperSetup-*.exe`（已安装） | 卸载确认界面（显示目录/版本）→ 清单式卸载 → 报告 |
-| 控制面板「卸载程序」 | 静默卸载（setup exe `--uninstall`） |
+| **🔍 自由缩放**<br>拖动棋盘右下角即可放大，格子最小 16px，无固定大小上限；也可自动适配窗口，高分屏保持清晰。 | **🧩 局部防猜测**<br>默认开启。先检查逻辑可解性，再修复需要猜测的区域，保留已经取得的局部进展。 |
+| **🎯 专注视图**<br>收起顶栏与侧栏，让棋盘、进度、雷数和时间留在眼前。视图切换不打断当前对局。 | **🎮 三种操作方式**<br>鼠标、键盘与标准手柄均可游玩；手柄覆盖菜单、设置与昵称输入，七项动作支持重新绑定。 |
+| **🏆 六组排行榜**<br>三种标准难度各分防猜测开／关两组，记录前十名昵称与用时；成绩按本局实际状态归组。 | **⚙️ 从经典到自定义**<br>初级、中级、高级随时选择，也可自行设置行、列和雷数；支持暂停、自动暂停与快速重开。 |
 
-## 操作说明
+> 防猜测有明确的计算边界：雷密度超过 **50%**、局部修复预算耗尽，或生成超过 **8 秒**／发生失败时，会提示关闭本局防猜测，继续普通开局。首点及周围 **3×3 安全区**始终保留；生成期间可重开取消。
 
-| 操作 | 效果 |
+## 实际界面
+
+**经典对局** · 中级 16 × 16 棋盘，40 颗地雷。主要信息集中在顶栏，设置收进侧栏。
+
+![中级模式真实游戏界面：16×16 棋盘、剩余雷数、计时和安全格进度](doc/media/gameplay.png)
+
+**专注视图** · 同一局棋盘，只保留游玩需要的信息。按 F10 或手柄 R3 即可切换。
+
+![同一局游戏的专注视图：棋盘、进度与紧凑雷数和时间显示](doc/media/focus.png)
+
+## 选一局开始
+
+| 难度 | 棋盘 | 地雷 |
+|---|---:|---:|
+| 初级 | 9 × 9 | 10 |
+| 中级 | 16 × 16 | 40 |
+| 高级 | 16 × 30 | 99 |
+| 自定义 | 行／列各 5～60 | 按棋盘大小设置 |
+
+自定义雷数范围为 `1～min(⌊总格数 × 0.8⌋, 总格数 − 9)`，自定义对局不计入排行榜。设置和排行榜保存在本机。
+
+### 下载、安装与卸载
+
+1. 从上方 GitHub 或 Gitee 下载 `MinesweeperSetup-1.6.0-win.exe`。
+2. 双击打开安装向导，选择安装目录以及桌面／开始菜单快捷方式，确认安装。
+3. 从快捷方式或安装目录中的 `Minesweeper.exe` 启动游戏。
+
+已安装时，再次运行安装器会显示**卸载确认**；也可从 Windows「卸载程序」进入卸载。卸载按安装清单删除文件，安装目录中自行放入的其他文件会保留并提示。建议保留安装器，Windows 卸载入口会引用它。
+
+安装器自身以便携方式运行，临时数据和日志使用 `%TEMP%`；游戏与独立安装器分离。移动游戏目录后，运行一次游戏可更新安装位置记录，供安装器定位卸载。
+
+### 鼠标、键盘与手柄
+
+| 动作 | 鼠标／键盘 | 标准手柄默认键 |
+|---|---|---|
+| 移动选中格 | 聚焦棋盘后按方向键 | 十字键／左摇杆 |
+| 翻开／确认 | 左键 · Enter／空格 | A／叉 |
+| 标记／返回 | 右键 · F 标记 · Escape 返回界面 | B／圆 |
+| 打开菜单 | 左上角 ☰ | X／方块 |
+| 暂停／继续 | 顶栏按钮 · P | Start |
+| 重新开始 | 顶栏按钮 · F2 | 长按 Y／三角 800ms |
+| 专注视图 | 顶栏「专注」· F10 | R3 |
+| 操作说明 | 菜单「操作说明」· F1 | View／Back／Select |
+
+右键标记按 **旗 → 问号 → 无**循环。已翻开的数字格也可快捷操作：相邻旗数等于数字时，左键翻开其余未标旗邻格；周围未开格数等于数字时，右键将其全部标旗。键盘和手柄的翻开／标记同样支持数字格操作。
+
+拖动右下角缩放手柄可调整显示大小，手动尺寸保留到新局；菜单中选择「自动适配」可恢复窗口适配。切出窗口自动暂停，返回后手动继续。手柄键位可在「手柄与键位」页面修改，发生冲突时自动交换绑定。
+
+## 开发与设计
+
+<details>
+<summary><strong>本地运行、测试与打包</strong></summary>
+
+开发环境：Windows、Node.js ≥ 18。技术栈为 **Electron 33 · 原生 ESM · Canvas 2D · module Worker · Vitest**。
+
+```powershell
+npm install
+npm start
+npm test
+npm run test:watch
+```
+
+若 shell 预设了 `ELECTRON_RUN_AS_NODE=1`，先清除该变量再启动 Electron。集成与构建命令：
+
+```powershell
+Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+npx electron scripts/smoke.cjs
+npm run icons
+npm run dist
+node scripts/installer-e2e.cjs
+```
+
+`npm run dist` 会自动生成图标、清理旧构建、校验游戏文件白名单并打包；唯一产物为 `dist/MinesweeperSetup-<版本>-win.exe`。`npm run icons` 可独立从 SVG 源重建 PNG 与八尺寸 ICO。构建未配置代码签名。
+
+若 Electron 或构建工具二进制下载失败，可设置镜像后重试：
+
+```powershell
+$env:ELECTRON_MIRROR = 'https://npmmirror.com/mirrors/electron/'
+$env:ELECTRON_BUILDER_BINARIES_MIRROR = 'https://npmmirror.com/mirrors/electron-builder-binaries/'
+npm install --registry=https://registry.npmmirror.com
+```
+
+v1.6.0 发布验收：**456 项测试**、默认／双倍缩放下各 **14 项冒烟检查**、**32 项安装端到端检查**通过。GitHub 与 Gitee 提供同一安装包，附件大小与 SHA256 已核对；这是发布验收记录，详见[任务进度](doc/tasks/progress.md)。
+
+</details>
+
+<details>
+<summary><strong>防猜测如何判断与修复</strong></summary>
+
+求解先使用单格规则和两集合子集规则，再对共享变量的前沿约束分量完整枚举。每个分量最多 **20 个变量**，每次搜索最多 **100000 个节点**；只有所有可行布局共同确定的格子才用于后续推理，搜索截断不产生确定性结论。因此，超过计算预算的可解局面仍可能触发修复。
+
+修复优先选择较小的含雷歧义簇，在簇内重排，保持簇外雷位；必要时移雷，但总雷数与首点安全区不变。只有未知格严格减少、且没有引入簇外新歧义的调整才会保留，随后继续修复下一处。重复布局复用求解结果。
+
+区域重排次数默认 **20**，可调 **1～200**；真实推理与候选尝试各最多 **400 次**。生成运行在独立 Worker，支持取消和 **8 秒硬超时**。密度、预算或生成异常导致防猜测关闭时，会显示中文提示，成绩计入「防猜测关」榜单。
+
+</details>
+
+<details>
+<summary><strong>代码结构与项目文档</strong></summary>
+
+| 目录 | 职责 |
 |---|---|
-| 左上角 ☰ | 展开/收起左侧侧栏（等级/自定义/防猜测/排行榜） |
-| 左键 · 未开格 | 翻开（首点安全 + 空区扩散） |
-| 左键 · 已开数字格 | chord：旗数==数字时翻开剩余未标旗邻居 |
-| 右键 · 未开格 | 循环标记 旗→问号→无（旗数上限=总雷数） |
-| 右键 · 已开数字格 | 镜像 chord：未翻开数==数字时批量标旗 |
-| 拖动右下角手柄 | 缩放显示（最小16px，无固定上限） |
-| 窗口缩放 | 棋盘等比自适应 |
-| 暂停 / 继续 | 暂停计时并遮罩屏幕 |
-| 重新开始 | 按当前模式/防猜测设置重开一局 |
-| 胜利 | 输入昵称 → 若进前十写入对应组排行榜 |
+| [`src/core/`](src/core/) | 纯 ESM 核心：棋盘、求解、状态机、设置与排行榜 |
+| [`src/renderer/`](src/renderer/) | Canvas 绘制、界面、输入、缩放与 Worker 接线 |
+| [`electron/`](electron/) · [`setup/`](setup/) | 游戏主进程、独立安装器与安装向导 |
+| [`assets/`](assets/) · [`styles/`](styles/) | 应用图标源与界面样式 |
+| [`tests/`](tests/) · [`scripts/`](scripts/) | 契约测试、冒烟、图标处理、构建与安装验收 |
+| [`doc/`](doc/) | 需求、设计、任务拆分与验证记录 |
 
-## 项目结构
+项目按文档驱动、测试先行的流程维护：[需求提案](doc/proposal.md) → [高层设计](doc/high-level-design.md) → [详细设计](doc/detailed-design.md) → [任务进度](doc/tasks/progress.md)。
 
-```
-├── electron/          # Electron 主进程（双应用分派）
-│   ├── main.cjs           # IS_SETUP 分派；游戏侧：窗口/IPC(app:get-version)/单实例锁/
-│   │                      #   崩溃日志 + 打包态 InstallLocation 自愈
-│   ├── setup.cjs          # 安装器主进程：窗口 + CLI（--uninstall/--install-dir/--no-*-shortcut）
-│   │                      #   + installer IPC 6 通道；userData/日志重定向 %TEMP%（零痕迹）
-│   ├── preload.cjs        # 游戏侧 API（仅 app.getVersion）
-│   ├── preload-setup.cjs  # 安装器侧 API（app.getVersion + installer 6 方法 + 进度）
-│   ├── installer-runner.cjs # 安装/卸载真实副作用执行（fs/注册表/快捷方式，薄胶水）
-│   ├── fs-utils.cjs       # 源树枚举/目标树扫描/递归删除
-│   └── log.cjs            # 按日轮转日志（dir 可覆盖：游戏 %LOCALAPPDATA%，setup %TEMP%）
-├── setup/              # 安装器渲染层
-│   ├── index.html         # 安装向导/卸载确认页面（CSP 同游戏）
-│   ├── ui.js              # createSetupUI/startSetupApp（向导 5 步 + 卸载确认 + legacy 清理）
-│   └── wizard.css         # 向导样式（自 styles/main.css 迁移）
-├── src/
-│   ├── core/          # 纯 JS 核心逻辑（可独立单测）
-│   │   ├── board.js       # 棋盘模型：布雷/翻开/chord/标记/胜负
-│   │   ├── solve.js       # 有界可解性判定 + 缓存/局部严格进展修复
-│   │   ├── constraints.js # 前沿分量完整枚举、变量/节点预算与确定性结论
-│   │   ├── game.js        # 游戏状态机 + 正向计时 + 暂停 + 防猜测调度/回退
-│   │   ├── modes.js       # 模式预设 + 自定义参数校验
-│   │   ├── leaderboard.js # localStorage 排行榜（top-10 × 模式 × 防猜测）
-│   │   ├── settings.js    # 防猜测设置持久化（损坏/越界自动回退默认）
-│   │   └── installer.js   # 安装清单/卸载计划/错误分类/路径重定位/映射（纯逻辑零副作用，
-│   │                      #   仅安装器打包，游戏不含）
-│   └── renderer/      # 渲染与交互层（无任何安装相关代码）
-│       ├── render.js      # Canvas 经典 3D 风绘制
-│       ├── mine-glyph.js  # 金属地雷矢量图元
-│       ├── ui.js          # 顶栏/侧栏/主页面板/弹窗/横幅
-│       └── main.js        # 事件装配/缩放/resize/设置持久化接线
-├── styles/main.css    # 经典扫雷风格样式（侧栏/面板美化）
-├── assets/            # icon.svg矢量源 + 512 PNG / 八尺寸ICO
-├── scripts/
-│   ├── generate-icons.cjs # npm run icons；各尺寸直接从SVG渲染
-│   ├── icon-resources.cjs # PE图标替换/读取，不改其他资源
-│   ├── icon-after-pack.cjs # 构建副本图标嵌入并复核
-│   ├── smoke.cjs          # 冒烟诊断（含深断言：无 installer 面）
-│   ├── build-dist.cjs     # 打包流水线（清理→staging→portable→校验）
-│   ├── setup-builder.yml  # 安装器构建配置（electron-builder portable）
-│   └── installer-e2e.cjs  # 端到端验收（静默安装/冒烟副本/移动自愈/卸载/GUI 卸载）
-├── tests/             # Vitest 测试（先行编写，含 setup.ui.test.js）
-├── index.html
-└── doc/               # 需求/设计/任务文档（vibe-coding 工作流产物）
-```
-
-## 设计取舍说明
-
-- **可解性算法**：先用前沿单格（NSS）和两集合子集（SNS）规则，再对共享变量的约束分量完整枚举。分量最多20变量、每次搜索最多100000节点；超预算不会猜测。判可解时存在确定性推理路径，超预算的可解局面仍可能触发修复。
-- **局部修复**：按大小选择含雷歧义簇；区域试排和移雷只有在未知格严格减少且无簇外新增歧义时接受。重复布局复用推理，整体受候选/推理次数预算及Worker 8秒硬超时控制。
-- **防猜测关闭**：雷密度 >50% 或重排耗尽仍不可解时，该局按普通扫雷继续（保留首点安全），
-  横幅提醒具体原因。被强制关闭的对局成绩计入"防猜测关"榜单。
-- **独立安装器**：安装 = 复制 setup 自身完整运行时（排除自身 app.asar；setup exe 重命名
-  `Minesweeper.exe`）+ 内嵌游戏目录映射为 `resources/app/` + 写安装清单（安装后相对路径）+
-  注册表卸载项（UninstallString 指向 setup 磁盘 exe `--uninstall`、InstallLocation）+ 快捷方式；
-  卸载 = 清单式删除（只删清单内文件，外来文件保留并提示；失败分类报错继续）+ 占用文件
-  延迟清理脚本重试删除；重定位链 = 自身目录 → 注册表 InstallLocation → UninstallString 目录；
-  游戏启动自愈 InstallLocation（移动目录后仍可卸载）；setup 零痕迹（userData/日志全在
-  %TEMP%，便携解压目录退出自动删除）。
-
-## 致谢
-
-项目按文档驱动 vibe-coding 工作流开发：需求提案 → 高层/详细设计 → 任务拆分 →
-subagent 分模块实现 → 测试驱动验证 → 集成与打包。详见 `doc/`。
+</details>
