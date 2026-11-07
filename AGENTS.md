@@ -3,6 +3,8 @@
 > **当前版本1.6.0（2026-10-31）**：取消棋盘48px缩放上限，防猜测统一局部修复；有界组合约束推理、重复布局缓存、局部严格进展。456测试/双缩放14项冒烟/E2E32项通过，本地game已更新且存档摘要不变。
 > 已发布 [Gitee v1.6.0](https://gitee.com/Molotov0coaktail/minesweeper/releases/tag/v1.6.0)，公开附件HTTP200、74,731,040字节、SHA256与本地一致。
 
+> 2026-11-08同步至GitHub：main与v1.6.0标签已推送，[GitHub最新Release](https://github.com/Molotov0cocktail/Minesweeper/releases/tag/v1.6.0)已发布，安装包74,731,040字节，GitHub附件SHA256与本地一致。
+
 ### v1.6.0 维护速查（优先于历史契约）
 
 - 自动适配与右下拖动均保留最小16px、取消固定最大值；手动尺寸保留至新局。#board-size动态回显>48尺寸且只保留当前动态项，0恢复自动；DPR/鼠标逻辑坐标分离，过大棋盘由主区域滚动。

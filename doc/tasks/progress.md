@@ -1,5 +1,12 @@
 # 任务进度 progress.md
 
+## GitHub同步发布（2026-11-08）
+
+- 用户明确要求同步GitHub代码及最新Release。工作区干净；沿用已验收v1.6.0产物，不改源码、不重打包。
+- GitHub远程min=https://github.com/Molotov0cocktail/Minesweeper.git；main与v1.6.0标签推送成功。直连连接重置，使用本机现有127.0.0.1:7890代理完成。
+- GitHub Release v1.6.0已发布并设为latest，远程标签SHA与本地一致；附件MinesweeperSetup-1.6.0-win.exe为74,731,040字节，GitHub返回digest=sha256:ad38cc7542ed5d45353f145397c722d92d840c6c732ec60db6d6e3baffcae8c3，与本地一致。
+- 凭据仅由Git凭据管理器读入发布进程内存，未打印/入库；临时发布脚本已删除。AGENTS/README同步GitHub入口，本次仅发布与文档记录。
+
 ## v1.6.0（2026-10-31）
 
 用户要求解除缩放上限、统一局部防猜测并改善算法。基线1.5.1工作区干净。
